@@ -69,8 +69,9 @@
 
         <!-- تبويب السجل -->
         <div id="history-tab" class="tab-content">
-            <div class="toolbar">
-                <button class="btn secondary" onclick="loadHistory()">تحديث السجل</button>
+            <div class="toolbar" style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button class="btn secondary" onclick="loadHistory()" style="flex: 1;">🔄 تحديث السجل</button>
+                <button class="btn danger" onclick="clearHistory()" style="flex: 1;">🗑️ حذف السجل كاملاً</button>
             </div>
             <table>
                 <thead>
