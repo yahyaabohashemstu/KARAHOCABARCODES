@@ -302,6 +302,148 @@ function exportSVG() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    return svgContent; // Return content for batch usage
+}
+
+// ==========================================
+// وظيفة التوليد الجماعي (Batch Generation)
+// ==========================================
+async function generateBatch() {
+    const inputEl = document.getElementById('inputCode');
+    const startCodeStr = inputEl.value.trim().replace(/[\s-]/g, '');
+    let count = parseInt(document.getElementById('batchCount').value);
+
+    // Validation
+    if (!/^\d+$/.test(startCodeStr) || startCodeStr.length !== 12) {
+        alert("يجب إدخال 12 رقم صحيح في خانة المنتج.");
+        return;
+    }
+    if (isNaN(count) || count < 1) count = 1;
+    if (count > 100) {
+        if (!confirm("لقد طلبت عدداً كبيراً (" + count + "). قد يستغرق ذلك بعض الوقت. هل تود الاستمرار؟")) return;
+    }
+
+    const zip = new JSZip();
+    const recordsToInsert = [];
+    let currentBigInt = BigInt(startCodeStr);
+
+    // واجهة التحميل البدائية
+    const btn = document.getElementById('btnBatch');
+    const originalText = btn.innerText;
+    btn.innerText = "جاري العمل... ⏳";
+    btn.disabled = true;
+
+    try {
+        for (let i = 0; i < count; i++) {
+            // 1. Calculate Code
+            const currentCode = currentBigInt.toString().padStart(12, '0');
+
+            // Calculate Check Digit
+            const digits = currentCode.split('').reverse().map(Number);
+            let total = 0;
+            digits.forEach((d, idx) => {
+                total += d * ((idx % 2 === 0) ? 3 : 1);
+            });
+            const checkDigit = (10 - (total % 10)) % 10;
+            const fullGtin = currentCode + checkDigit;
+
+            // 2. Generate SVG Content (Custom logic needed here since exportSVG downloads immediately)
+            // We need a helper function that returns the SVG string without downloading.
+            // I modified exportSVG above to return the content, but let's reimplement a clean helper to avoid DOM deps
+            const svgString = createSVGString(fullGtin);
+
+            // 3. Add to ZIP
+            zip.file(`EAN13_${fullGtin}.svg`, svgString);
+
+            // 4. Prepare DB Record
+            recordsToInsert.push({
+                input_code: currentCode,
+                check_digit: String(checkDigit),
+                full_gtin: fullGtin,
+                created_at: new Date().toISOString() // Note: slight offset in time is fine
+            });
+
+            // Increment
+            currentBigInt += 1n;
+        }
+
+        // 5. Generate ZIP File
+        const content = await zip.generateAsync({ type: "blob" });
+        saveAs(content, `Barcodes_Batch_${startCodeStr}_x${count}.zip`);
+
+        // 6. Bulk Insert to Supabase
+        if (_supabase) {
+            const { error } = await _supabase.from('barcode_history').insert(recordsToInsert);
+            if (error) console.error("Batch Insert Error", error);
+        } else {
+            // Local fallback
+            const local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
+            // Prepend all (reverse order to keep newest first)
+            recordsToInsert.reverse().forEach(r => local.unshift(r));
+            if (local.length > 50) local.splice(50);
+            localStorage.setItem('barcode_history', JSON.stringify(local));
+        }
+
+        // Update UI
+        updateRecentDisplay();
+        document.getElementById('inputCode').value = currentBigInt.toString().padStart(12, '0'); // Show next available
+        alert(`تم توليد ${count} باركود وتحميلهم بننجاح! ✅`);
+
+    } catch (e) {
+        console.error(e);
+        alert("حدث خطأ أثناء العملية: " + e.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Low-level SVG Helper for Batch (No DOM dependency)
+function createSVGString(code) {
+    const pattern = encodeEAN13(code);
+    if (!pattern) return "";
+
+    const moduleWidth = 1.8;
+    const shortBarH = 110;
+    const longBarH = 123;
+    const fontSize = 20;
+    const totalWidth = (95 + 14) * moduleWidth;
+    const totalHeight = longBarH + 10;
+    const startX = 9 * moduleWidth;
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}">
+        <rect width="100%" height="100%" fill="white"/>`;
+
+    for (let i = 0; i < pattern.length; i++) {
+        if (pattern[i] === '1') {
+            const x = startX + (i * moduleWidth);
+            const isGuard = (i < 3) || (i >= 45 && i < 50) || (i >= 92);
+            const h = isGuard ? longBarH : shortBarH;
+            svg += `<rect x="${x}" y="0" width="${moduleWidth}" height="${h}" fill="black" shape-rendering="crispEdges"/>`;
+        }
+    }
+
+    const textY = longBarH + 2;
+    svg += `<text x="${startX - 5}" y="${textY}" font-family="Consolas, monospace" font-size="${fontSize}" text-anchor="end">${code[0]}</text>`;
+
+    let curX = startX + (3 * moduleWidth);
+    for (let i = 0; i < 6; i++) {
+        const cx = curX + (3.5 * moduleWidth);
+        svg += `<text x="${cx}" y="${textY}" font-family="Consolas, monospace" font-size="${fontSize}" text-anchor="middle">${code.substring(1, 7)[i]}</text>`;
+        curX += 7 * moduleWidth;
+    }
+
+    curX = startX + (50 * moduleWidth);
+    for (let i = 0; i < 6; i++) {
+        const cx = curX + (3.5 * moduleWidth);
+        svg += `<text x="${cx}" y="${textY}" font-family="Consolas, monospace" font-size="${fontSize}" text-anchor="middle">${code.substring(7, 13)[i]}</text>`;
+        curX += 7 * moduleWidth;
+    }
+
+    svg += `<text x="${startX + (95 * moduleWidth) + 5}" y="${textY}" font-family="Consolas, monospace" font-size="${fontSize}" text-anchor="start">&gt;</text>`;
+    svg += `</svg>`;
+
+    return svg;
 }
 
 // Initial Load

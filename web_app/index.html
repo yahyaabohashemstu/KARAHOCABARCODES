@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +8,11 @@
     <link rel="stylesheet" href="style.css">
     <!-- استدعاء مكتبة Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- مكتبات ZIP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
+
 <body>
 
     <div class="main-container">
@@ -21,9 +26,15 @@
 
         <!-- تبويب المولد -->
         <div id="generator-tab" class="tab-content active">
-            <div class="input-group">
-                <label>أدخل رقم المنتج (12 خانة):</label>
-                <input type="text" id="inputCode" placeholder="مثال: 869924369411" maxlength="12">
+            <div class="input-row">
+                <div class="input-group main-input">
+                    <label>أدخل رقم المنتج (12 خانة):</label>
+                    <input type="text" id="inputCode" placeholder="مثال: 869924369411" maxlength="12">
+                </div>
+                <div class="input-group count-input">
+                    <label>العدد:</label>
+                    <input type="number" id="batchCount" value="1" min="1" max="100">
+                </div>
             </div>
 
             <div class="actions">
@@ -43,7 +54,12 @@
                 </div>
             </div>
 
-            <button id="btnExport" class="btn success full-width" onclick="exportSVG()" disabled>💾 حفظ صورة الباركود (SVG)</button>
+            <div class="btn-group-vertical">
+                <button id="btnExport" class="btn success full-width" onclick="exportSVG()" disabled>💾 حفظ صورة
+                    الباركود (SVG)</button>
+                <button id="btnBatch" class="btn warning full-width" onclick="generateBatch()"
+                    style="margin-top: 10px;">📦 توليد وتنزيل المجموعة (ZIP)</button>
+            </div>
 
             <div class="recent-bar">
                 <span>آخر الأرقام المستخدمة:</span>
@@ -78,4 +94,5 @@
 
     <script src="script.js"></script>
 </body>
+
 </html>

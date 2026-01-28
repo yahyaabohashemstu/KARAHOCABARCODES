@@ -23,12 +23,13 @@ body {
     width: 100%;
     max-width: 600px;
     background-color: var(--bg-color);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     border-radius: 8px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 90vh; /* تقريبا مثل التطبيق */
+    height: 90vh;
+    /* تقريبا مثل التطبيق */
 }
 
 header {
@@ -51,7 +52,7 @@ header h1 {
     flex: 1;
     padding: 15px;
     border: none;
-    background: rgba(0,0,0,0.2);
+    background: rgba(0, 0, 0, 0.2);
     color: #ccc;
     font-weight: bold;
     cursor: pointer;
@@ -75,8 +76,21 @@ header h1 {
     display: block;
 }
 
+.input-row {
+    display: flex;
+    gap: 15px;
+}
+
 .input-group {
     margin-bottom: 20px;
+}
+
+.input-group.main-input {
+    flex: 3;
+}
+
+.input-group.count-input {
+    flex: 1;
 }
 
 .input-group label {
@@ -118,11 +132,30 @@ header h1 {
     cursor: not-allowed;
 }
 
-.btn.primary { background-color: var(--primary); }
-.btn.secondary { background-color: var(--secondary); }
-.btn.info { background-color: #8e44ad; } /* Purple for +1 */
-.btn.success { background-color: var(--success); }
-.btn.full-width { width: 100%; }
+.btn.primary {
+    background-color: var(--primary);
+}
+
+.btn.secondary {
+    background-color: var(--secondary);
+}
+
+.btn.info {
+    background-color: #8e44ad;
+}
+
+/* Purple for +1 */
+.btn.success {
+    background-color: var(--success);
+}
+
+.btn.warning {
+    background-color: #f39c12;
+}
+
+.btn.full-width {
+    width: 100%;
+}
 
 .result-box {
     background: white;
@@ -139,7 +172,9 @@ header h1 {
     margin-bottom: 10px;
 }
 
-.result-row:last-child { margin-bottom: 0; }
+.result-row:last-child {
+    margin-bottom: 0;
+}
 
 .highlight {
     font-size: 1.5rem;
@@ -179,7 +214,8 @@ table {
     background: white;
 }
 
-th, td {
+th,
+td {
     padding: 10px;
     text-align: center;
     border-bottom: 1px solid #ddd;
