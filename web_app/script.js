@@ -6,9 +6,14 @@ const SUPABASE_URL = 'https://jgzepchquakdocjzjrkv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpnemVwY2hxdWFrZG9janpqcmt2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1ODI5ODMsImV4cCI6MjA4NTE1ODk4M30.CluRqnJv2ibc69esuQTtp50saS6oD8SIxKlKtSASYXE';
 
 // تهيئة العميل
-let supabase = null;
+let _supabase = null;
 if (SUPABASE_URL !== 'YOUR_SUPABASE_URL_HERE') {
-    supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // التأكد من أن المكتبة تم تحميلها
+    if (typeof supabase !== 'undefined') {
+        _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } else {
+        console.error("Supabase library not loaded!");
+    }
 } else {
     console.warn("Supabase keys are missing. Using local mode simulation.");
 }
@@ -48,8 +53,8 @@ function clearFields() {
 
 async function getLastUsedCode() {
     // 1. محاولة من Supabase
-    if (supabase) {
-        const { data, error } = await supabase
+    if (_supabase) {
+        const { data, error } = await _supabase
             .from('barcode_history')
             .select('input_code')
             .order('created_at', { ascending: false })
@@ -136,8 +141,8 @@ async function saveRecord(input, check, full) {
     };
 
     // 1. Supabase
-    if (supabase) {
-        const { error } = await supabase.from('barcode_history').insert([record]);
+    if (_supabase) {
+        const { error } = await _supabase.from('barcode_history').insert([record]);
         if (error) console.error("Supabase Error:", error);
     }
 
