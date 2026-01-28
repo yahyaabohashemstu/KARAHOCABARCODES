@@ -155,8 +155,8 @@ async function saveRecord(input, check, full) {
 
 async function updateRecentDisplay() {
     let recents = [];
-    if (supabase) {
-        const { data } = await supabase
+    if (_supabase) {
+        const { data } = await _supabase
             .from('barcode_history')
             .select('input_code')
             .order('created_at', { ascending: false })
@@ -177,8 +177,8 @@ async function loadHistory() {
 
     let historyData = [];
 
-    if (supabase) {
-        const { data, error } = await supabase
+    if (_supabase) {
+        const { data, error } = await _supabase
             .from('barcode_history')
             .select('*')
             .order('created_at', { ascending: false })
