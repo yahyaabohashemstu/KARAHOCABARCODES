@@ -208,6 +208,42 @@ async function loadHistory() {
     });
 }
 
+async function clearHistory() {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف جميع السجلات؟\nلا يمكن استرجاع البيانات بعد الحذف!")) return;
+
+    const btn = document.querySelector('#history-tab button');
+    const originalText = btn.innerText;
+    btn.innerText = "جاري الحذف...";
+    btn.disabled = true;
+
+    try {
+        // ID > 0 is a standard way to match all rows if ID is standard serial
+        if (_supabase) {
+            const { error } = await _supabase
+                .from('barcode_history')
+                .delete()
+                .gt('id', 0);
+
+            if (error) throw error;
+        }
+
+        // Local Storage
+        localStorage.removeItem('barcode_history');
+
+        // Refresh
+        await loadHistory();
+        updateRecentDisplay();
+        alert("تم حذف السجل بنجاح ✅");
+
+    } catch (e) {
+        console.error(e);
+        alert("حدث خطأ أثناء الحذف: " + e.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
 // ==========================================
 // خوارزمية الرسم (Export SVG)
 // ==========================================

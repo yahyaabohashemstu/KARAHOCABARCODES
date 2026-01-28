@@ -1,363 +1,388 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import os
-import datetime
 import csv
+import os
+from datetime import datetime
+import zipfile
 
 class KarahocaBarcodeApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("KARAHOCA - نظام الباركود المتقدم (EAN-13)")
-        self.root.geometry("700x650") # زيادة الطول قليلاً لاستيعاب الشريط الجديد
+        self.root.title("KARAHOCABARCODES PRO")
+        self.root.geometry("700x700")
         self.root.resizable(True, True)
         
-        # ملف السجل
-        self.history_file = "barcode_history.csv"
-        self.ensure_history_file_exists()
-
-        # الأنماط والتنسيق
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("TNotebook.Tab", font=("Segoe UI", 10, "bold"), padding=[10, 5])
-        
-        # --- جداول تشفير EAN-13 ---
+        # الأنماط الثنائية للأرقام (L-code, G-code, R-code)
         self.L_CODES = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"]
         self.G_CODES = ["0100111", "0110011", "0011011", "0100001", "0011101", "0111001", "0000101", "0010001", "0001001", "0010111"]
         self.R_CODES = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001000", "1010000", "1000100", "1001000", "1110100"]
+        
+        # هيكلية التشفير حسب الرقم الأول (يسار)
         self.STRUCTURE = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"]
 
-        # --- الحاوية الرئيسية (Tabs) ---
-        self.notebook = ttk.Notebook(root)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        self.setup_ui()
 
-        # التبويب الأول: المولد
-        self.tab_generator = tk.Frame(self.notebook, bg="#f0f0f0")
-        self.notebook.add(self.tab_generator, text=" 📠 مولد الباركود ")
-        self.setup_generator_ui()
+    def setup_ui(self):
+        # النمط العام
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=5)
+        style.configure('TLabel', font=('Segoe UI', 11))
+        style.configure('TEntry', font=('Consolas', 12))
 
-        # التبويب الثاني: السجل
-        self.tab_history = tk.Frame(self.notebook, bg="#f0f0f0")
-        self.notebook.add(self.tab_history, text=" 📜 سجل العمليات ")
-        self.setup_history_ui()
-
-        # تحميل البيانات الأولية
-        self.load_history_to_tree()
-        self.update_recent_label() # تحديث الشريط السفلي عند التشغيل
-
-    # ==========================
-    # جزء إدارة الملفات (Backend)
-    # ==========================
-    def ensure_history_file_exists(self):
-        if not os.path.exists(self.history_file):
-            with open(self.history_file, mode='w', newline='', encoding='utf-8') as file:
-                writer = csv.writer(file)
-                writer.writerow(["Timestamp", "Input_Code", "Check_Digit", "Full_GTIN"])
-
-    def save_record(self, input_code, check_digit, full_gtin):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # حاوية التبويبات
+        tab_control = ttk.Notebook(self.root)
         
-        # 1. الحفظ في الملف
-        with open(self.history_file, mode='a', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            writer.writerow([timestamp, input_code, check_digit, full_gtin])
+        self.tab1 = ttk.Frame(tab_control)
+        self.tab2 = ttk.Frame(tab_control)
         
-        # 2. التحديث في واجهة السجل
-        self.tree.insert("", 0, values=(timestamp, input_code, check_digit, full_gtin))
+        tab_control.add(self.tab1, text='مولد الباركود')
+        tab_control.add(self.tab2, text='سجل العمليات')
+        tab_control.pack(expand=1, fill="both")
         
-        # 3. تحديث الشريط السفلي في الصفحة الرئيسية
-        self.update_recent_label()
-
-    def get_recent_inputs(self, count=2):
-        """جلب آخر رقمين تم استخدامهما من ملف CSV"""
-        recent_items = []
-        if os.path.exists(self.history_file):
-            try:
-                with open(self.history_file, mode='r', encoding='utf-8') as file:
-                    reader = csv.reader(file)
-                    next(reader, None) # skip header
-                    # قراءة كل الصفوف
-                    rows = list(reader)
-                    # نأخذ آخر عنصرين (أو أقل إذا لم يوجد)
-                    last_rows = rows[-count:]
-                    # استخراج العمود الثاني (Input_Code)
-                    for row in last_rows:
-                        if len(row) > 1:
-                            recent_items.append(row[1])
-            except:
-                pass
-        return recent_items
-
-    # ==========================
-    # واجهة المولد (Generator UI)
-    # ==========================
-    def setup_generator_ui(self):
-        # العنوان
-        header = tk.Frame(self.tab_generator, bg="#2c3e50", height=70)
-        header.pack(fill=tk.X)
-        tk.Label(header, text="KARAHOCA BARCODE PRO", font=("Segoe UI", 18, "bold"), fg="white", bg="#2c3e50").pack(pady=15)
-
-        container = tk.Frame(self.tab_generator, bg="#f0f0f0", padx=30, pady=10) # قللنا الـ pady لتقريب العناصر
-        container.pack(fill=tk.BOTH, expand=True)
-
-        tk.Label(container, text="أدخل رقم المنتج (12 خانة):", font=("Segoe UI", 11), bg="#f0f0f0").pack(anchor="e")
+        self.setup_generator_ui(self.tab1)
+        self.setup_history_ui(self.tab2)
         
-        self.entry_var = tk.StringVar()
-        self.entry_code = ttk.Entry(container, textvariable=self.entry_var, font=("Consolas", 16), justify="center")
-        self.entry_code.pack(fill=tk.X, pady=5, ipady=8)
-        self.entry_code.bind('<Return>', self.calculate)
-        self.create_context_menu(self.entry_code)
-        self.entry_code.focus()
+        # تحميل السجل عند الفتح
+        self.load_history()
 
-        # أزرار
-        btn_frame = tk.Frame(container, bg="#f0f0f0")
+    def setup_generator_ui(self, container):
+        frame = tk.Frame(container, bg="#f0f0f0")
+        frame.pack(expand=True, fill="both", padx=20, pady=20)
+        
+        # الشعار أو العنوان
+        tk.Label(frame, text="KARAHOCA BARCODE PRO", font=("Segoe UI", 18, "bold"), bg="#2c3e50", fg="white").pack(fill="x", pady=(0, 20))
+        
+        # مدخلات البيانات
+        input_frame = tk.Frame(frame, bg="#f0f0f0")
+        input_frame.pack(pady=10)
+        
+        tk.Label(input_frame, text="أدخل رقم المنتج (12 خانة):", bg="#f0f0f0").grid(row=0, column=0, padx=5, sticky="e")
+        
+        self.code_entry = ttk.Entry(input_frame, width=20, justify='center')
+        self.code_entry.grid(row=0, column=1, padx=5)
+
+        # خانة العدد (Quantity)
+        tk.Label(input_frame, text="العدد:", bg="#f0f0f0").grid(row=0, column=2, padx=5, sticky="e")
+        self.count_var = tk.IntVar(value=1)
+        self.count_spin = tk.Spinbox(input_frame, from_=1, to=100, width=5, textvariable=self.count_var)
+        self.count_spin.grid(row=0, column=3, padx=5)
+
+        # الأزرار
+        btn_frame = tk.Frame(frame, bg="#f0f0f0")
         btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="مسح الحقول", command=self.clear_fields).grid(row=0, column=0, padx=10)
-        ttk.Button(btn_frame, text="(+1)", command=self.increment_code).grid(row=0, column=1, padx=10)
-        ttk.Button(btn_frame, text="حساب وتسجيل", command=self.calculate).grid(row=0, column=2, padx=10)
-
-        # النتيجة
-        res_frame = tk.LabelFrame(container, text=" النتيجة الحالية ", font=("Segoe UI", 10, "bold"), bg="#f0f0f0", padx=15, pady=10)
-        res_frame.pack(fill=tk.X, pady=5)
         
-        tk.Label(res_frame, text="رقم التحقق:", bg="#f0f0f0").grid(row=0, column=1, sticky="e")
-        self.lbl_check_digit = tk.Label(res_frame, text="-", font=("Consolas", 18, "bold"), fg="#e74c3c", bg="#f0f0f0")
-        self.lbl_check_digit.grid(row=0, column=0, sticky="w", padx=20)
-
-        tk.Label(res_frame, text="الباركود الكامل:", bg="#f0f0f0").grid(row=1, column=1, sticky="e", pady=(5,0))
-        self.full_barcode_var = tk.StringVar()
-        full_entry = ttk.Entry(res_frame, textvariable=self.full_barcode_var, font=("Consolas", 14), state="readonly", justify="center")
-        full_entry.grid(row=1, column=0, sticky="ew", padx=5, pady=(5,0))
-        self.create_copy_menu(full_entry)
-
-        # زر التصدير
-        self.btn_export_svg = ttk.Button(container, text="💾 حفظ صورة الباركود (SVG)", command=self.export_perfect_svg, state="disabled")
-        self.btn_export_svg.pack(pady=15, fill=tk.X)
-
-        # === المنطقة الجديدة: آخر الأرقام المستخدمة ===
-        recent_frame = tk.Frame(self.tab_generator, bg="#e0e0e0", bd=1, relief="solid")
-        recent_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 20))
+        ttk.Button(btn_frame, text="مسح الحقول", command=self.clear_fields).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="(+1)", command=self.increment_code).grid(row=0, column=1, padx=5)
+        ttk.Button(btn_frame, text="حساب وتسجيل", command=self.calculate).grid(row=0, column=2, padx=5)
         
-        tk.Label(recent_frame, text="آخر الأرقام المستخدمة:", font=("Segoe UI", 9, "bold"), bg="#e0e0e0", fg="#555").pack(pady=(5,0))
+        # زر التوليد الجماعي
+        ttk.Button(btn_frame, text="📦 القائمة المضغوطة (ZIP)", command=self.batch_export).grid(row=1, column=0, columnspan=3, pady=10, sticky="ew")
+
+        # عرض النتائج
+        result_frame = tk.LabelFrame(frame, text="النتيجة", bg="white", font=("Segoe UI", 10, "bold"))
+        result_frame.pack(fill="x", pady=10, padx=20)
         
-        self.lbl_recent_display = tk.Label(recent_frame, text="...", font=("Consolas", 12, "bold"), fg="#2980b9", bg="#e0e0e0")
-        self.lbl_recent_display.pack(pady=(0, 5))
-
-        tk.Label(self.tab_generator, text="Developed for KARAHOCA TEMİZLİK", font=("Arial", 8), fg="#7f8c8d", bg="#f0f0f0").pack(side=tk.BOTTOM, pady=2)
-
-    def update_recent_label(self):
-        """تحديث النص في أسفل الصفحة"""
-        recents = self.get_recent_inputs(2) # جلب آخر رقمين
-        if not recents:
-            display_text = "لا يوجد سجل بعد"
-        else:
-            # دمجهم بشرطة (الأقدم - الأحدث)
-            display_text = " - ".join(recents)
+        tk.Label(result_frame, text="رقم التحقق (Check Digit):", bg="white").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        self.check_digit_label = tk.Label(result_frame, text="-", font=("Consolas", 14, "bold"), fg="#e74c3c", bg="white")
+        self.check_digit_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         
-        self.lbl_recent_display.config(text=display_text)
-
-    # ==========================
-    # واجهة السجل (History UI)
-    # ==========================
-    def setup_history_ui(self):
-        container = tk.Frame(self.tab_history, bg="#f0f0f0", padx=10, pady=10)
-        container.pack(fill=tk.BOTH, expand=True)
-
-        toolbar = tk.Frame(container, bg="#f0f0f0")
-        toolbar.pack(fill=tk.X, pady=(0, 10))
-        ttk.Button(toolbar, text="تحديث السجل", command=self.load_history_to_tree).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(toolbar, text="مسح السجل بالكامل", command=self.clear_history_file).pack(side=tk.LEFT, padx=5)
-
-        columns = ("time", "input", "check", "full")
-        self.tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="browse")
+        tk.Label(result_frame, text="الباركود الكامل (GTIN-13):", bg="white").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        self.full_code_entry = ttk.Entry(result_frame, width=20, justify='center', font=("Consolas", 12))
+        self.full_code_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         
-        self.tree.heading("time", text="التوقيت")
-        self.tree.column("time", width=150, anchor="center")
-        self.tree.heading("input", text="الرقم المدخل")
-        self.tree.column("input", width=120, anchor="center")
-        self.tree.heading("check", text="التحقق")
-        self.tree.column("check", width=50, anchor="center")
-        self.tree.heading("full", text="الباركود الناتج")
-        self.tree.column("full", width=150, anchor="center")
+        # زر الحفظ
+        self.save_btn = ttk.Button(frame, text="💾 حفظ صورة الباركود (SVG)", command=self.save_svg, state="disabled")
+        self.save_btn.pack(pady=10)
+        
+        # عرض آخر الأرقام
+        self.recent_label = tk.Label(frame, text="آخر الأرقام المستخدمة: ...", bg="#e0e0e0", fg="#555")
+        self.recent_label.pack(side="bottom", fill="x", pady=10)
 
-        scrollbar = ttk.Scrollbar(container, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    def setup_history_ui(self, container):
+        # Using a Treeview for history
+        columns = ('date', 'input', 'check', 'full')
+        self.tree = ttk.Treeview(container, columns=columns, show='headings')
+        
+        self.tree.heading('date', text='التاريخ')
+        self.tree.heading('input', text='المدخل')
+        self.tree.heading('check', text='التحقق')
+        self.tree.heading('full', text='الكامل')
+        
+        self.tree.column('date', width=150, anchor='center')
+        self.tree.column('input', width=100, anchor='center')
+        self.tree.column('check', width=50, anchor='center')
+        self.tree.column('full', width=150, anchor='center')
+        
+        slider = ttk.Scrollbar(container, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=slider.set)
+        
+        slider.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
 
-    def load_history_to_tree(self):
+    def load_history(self):
+        # تنظيف الجدول
         for item in self.tree.get_children():
             self.tree.delete(item)
-        if not os.path.exists(self.history_file): return
+            
+        if not os.path.exists("barcode_history.csv"):
+            return
+
+        recent_items = []
         try:
-            with open(self.history_file, mode='r', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                next(reader, None)
+            with open("barcode_history.csv", "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
                 rows = list(reader)
-                for row in reversed(rows):
-                    if row: self.tree.insert("", "end", values=row)
-        except: pass
+                for row in reversed(rows): # الأحدث أولاً
+                    if len(row) == 4:
+                        self.tree.insert('', 'end', values=row)
+                        if len(recent_items) < 3:
+                            recent_items.append(row[1])
+        except Exception as e:
+            pass
+            
+        # تحديث شريط الحالة
+        if recent_items:
+            self.recent_label.config(text=f"آخر الأرقام: {' - '.join(recent_items)}")
 
-    def clear_history_file(self):
-        if messagebox.askyesno("تأكيد", "هل أنت متأكد من مسح السجل؟"):
-            if os.path.exists(self.history_file):
-                os.remove(self.history_file)
-            self.ensure_history_file_exists()
-            self.load_history_to_tree()
-            self.update_recent_label() # تحديث الشريط ليصبح فارغاً
+    def get_recent_inputs(self, count=1):
+        recent_items = []
+        if os.path.exists("barcode_history.csv"):
+             with open("barcode_history.csv", "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+                for row in rows[-count:]:
+                    if len(row) > 1:
+                        recent_items.append(row[1])
+        return recent_items
 
-    # ==========================
-    # المنطق
-    # ==========================
     def increment_code(self):
-        current_val = self.entry_var.get().strip()
+        current_val = self.code_entry.get().strip()
         
-        # إذا كان الحقل فارغاً، نحاول جلب آخر رقم من السجل
+        # If empty, try to get last used
         if not current_val:
             recents = self.get_recent_inputs(1)
             if recents:
-                current_val = recents[-1] # السجل يحتوي [الأقدام، ...، الأحدث]
-
+                current_val = recents[-1]
+        
         if not current_val:
-            messagebox.showinfo("تنبيه", "لا يوجد رقم سابق للزيادة عليه. يرجى إدخال رقم مبدئي.")
+            messagebox.showwarning("تنبيه", "لا يوجد رقم سابق للزيادة عليه. أدخل رقمًا لأول مرة.")
             return
 
+        current_val = current_val.replace('-', '').replace(' ', '')
+        
+        if not current_val.isdigit():
+             messagebox.showerror("خطأ", "القيمة الحالية ليست رقمًا صحيحًا.")
+             return
+             
         try:
-            # تنظيف المدخل
-            clean_val = current_val.replace(" ", "").replace("-", "")
-            if not clean_val.isdigit():
-                 messagebox.showerror("خطأ", "القيمة الحالية ليست رقمًا صحيحًا.")
-                 return
-
-            next_val = int(clean_val) + 1
-            # تنسيق الرقم ليكون 12 خانة (إضافة أصفار على اليسار إذا لزم الأمر)
+            # Convert to int, add 1, convert back to string with zfill
+            next_val = int(current_val) + 1
             new_code = str(next_val).zfill(12)
             
-            self.entry_var.set(new_code)
-            
+            self.clear_fields()
+            self.code_entry.insert(0, new_code)
         except Exception as e:
-             messagebox.showerror("خطأ", str(e))
-
-    def calculate(self, event=None):
-        raw_code = self.entry_var.get().strip().replace(" ", "").replace("-", "")
-        self.entry_var.set(raw_code)
-
-        if not raw_code.isdigit() or len(raw_code) != 12:
-            messagebox.showerror("خطأ", "يجب إدخال 12 رقم بالضبط.")
-            return
-
-        try:
-            reversed_digits = raw_code[::-1]
-            total = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(reversed_digits))
-            check_digit = (10 - (total % 10)) % 10
-            
-            full_gtin = f"{raw_code}{check_digit}"
-
-            self.lbl_check_digit.config(text=str(check_digit))
-            self.full_barcode_var.set(full_gtin)
-            self.btn_export_svg.config(state="normal")
-            
-            # حفظ وتحديث
-            self.save_record(raw_code, check_digit, full_gtin)
-
-        except Exception as e:
-            messagebox.showerror("خطأ", str(e))
-
-    # ==========================
-    # خوارزمية الرسم (الدقيقة)
-    # ==========================
-    def encode_ean13(self, code):
-        if len(code) != 13: return None
-        first = int(code[0])
-        left = code[1:7]
-        right = code[7:13]
-        
-        binary = "101"
-        structure = self.STRUCTURE[first]
-        for i, d in enumerate(left):
-            binary += self.L_CODES[int(d)] if structure[i] == 'L' else self.G_CODES[int(d)]
-        binary += "01010"
-        for d in right:
-            binary += self.R_CODES[int(d)]
-        binary += "101"
-        return binary
-
-    def export_perfect_svg(self):
-        code = self.full_barcode_var.get()
-        if not code: return
-
-        file_path = filedialog.asksaveasfilename(defaultextension=".svg", filetypes=[("SVG Image", "*.svg")], initialfile=f"EAN13_{code}")
-        if not file_path: return
-
-        try:
-            pattern = self.encode_ean13(code)
-            if not pattern: return
-
-            module_width = 1.8
-            short_bar_h = 110    
-            long_bar_h = 123
-            font_size = 20
-            total_width = (95 + 14) * module_width
-            
-            svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{long_bar_h + 10}" viewBox="0 0 {total_width} {long_bar_h + 10}">']
-            svg.append(f'<rect width="100%" height="100%" fill="white"/>')
-            
-            start_x = 9 * module_width 
-
-            for i, bit in enumerate(pattern):
-                if bit == "1":
-                    x = start_x + (i * module_width)
-                    is_guard = (i < 3) or (45 <= i < 50) or (i >= 92)
-                    h = long_bar_h if is_guard else short_bar_h
-                    svg.append(f'<rect x="{x}" y="0" width="{module_width}" height="{h}" fill="black" shape-rendering="crispEdges"/>')
-
-            text_y = long_bar_h + 2 
-            
-            svg.append(f'<text x="{start_x - 5}" y="{text_y}" font-family="Consolas, monospace" font-size="{font_size}" text-anchor="end">{code[0]}</text>')
-            
-            cur_x = start_x + (3 * module_width)
-            for d in code[1:7]:
-                cx = cur_x + (3.5 * module_width)
-                svg.append(f'<text x="{cx}" y="{text_y}" font-family="Consolas, monospace" font-size="{font_size}" text-anchor="middle">{d}</text>')
-                cur_x += (7 * module_width)
-
-            cur_x = start_x + (50 * module_width)
-            for d in code[7:13]:
-                cx = cur_x + (3.5 * module_width)
-                svg.append(f'<text x="{cx}" y="{text_y}" font-family="Consolas, monospace" font-size="{font_size}" text-anchor="middle">{d}</text>')
-                cur_x += (7 * module_width)
-
-            svg.append(f'<text x="{start_x + (95 * module_width) + 5}" y="{text_y}" font-family="Consolas, monospace" font-size="{font_size}" text-anchor="start">&gt;</text>')
-            svg.append('</svg>')
-            
-            with open(file_path, 'w', encoding='utf-8') as f: f.write("\n".join(svg))
-            messagebox.showinfo("تم", f"تم الحفظ: {os.path.basename(file_path)}")
-
-        except Exception as e: messagebox.showerror("خطأ", str(e))
-
-    # ==========================
-    # Helpers
-    # ==========================
-    def create_context_menu(self, widget):
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="لصق (Paste)", command=lambda: self.paste_to_widget(widget))
-        widget.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
-        self.root.bind_class("Entry", "<Control-v>", lambda e: self.paste_to_widget(widget))
-
-    def create_copy_menu(self, widget):
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="نسخ (Copy)", command=lambda: self.root.clipboard_append(self.full_barcode_var.get()))
-        widget.bind("<Button-3>", lambda e: menu.tk_popup(e.x_root, e.y_root))
-
-    def paste_to_widget(self, widget):
-        try: widget.insert(tk.INSERT, self.root.clipboard_get())
-        except: pass
+            messagebox.showerror("خطأ", f"حدث خطأ أثناء الزيادة: {e}")
 
     def clear_fields(self):
-        self.entry_var.set("")
-        self.full_barcode_var.set("")
-        self.lbl_check_digit.config(text="-")
-        self.btn_export_svg.config(state="disabled")
-        self.entry_code.focus()
+        self.code_entry.delete(0, tk.END)
+        self.full_code_entry.delete(0, tk.END)
+        self.check_digit_label.config(text="-")
+        self.save_btn.config(state="disabled")
+
+    def calculate(self):
+        raw_code = self.code_entry.get().strip()
+        
+        # تنظيف المدخلات
+        raw_code = raw_code.replace('-', '').replace(' ', '')
+        self.code_entry.delete(0, tk.END)
+        self.code_entry.insert(0, raw_code)
+        
+        if not raw_code.isdigit() or len(raw_code) != 12:
+            messagebox.showerror("خطأ", "الرجاء إدخال 12 رقم صحيح.")
+            return
+
+        # حساب رقم التحقق
+        reversed_digits = raw_code[::-1]
+        total = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(reversed_digits))
+        check_digit = (10 - (total % 10)) % 10
+        
+        full_gtin = raw_code + str(check_digit)
+        
+        # تحديث الواجهة
+        self.check_digit_label.config(text=str(check_digit))
+        self.full_code_entry.delete(0, tk.END)
+        self.full_code_entry.insert(0, full_gtin)
+        self.save_btn.config(state="normal")
+        
+        # حفظ في السجل
+        self.save_to_history(raw_code, check_digit, full_gtin)
+        self.load_history()
+
+    def save_to_history(self, input_code, check_digit, full_gtin):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open("barcode_history.csv", "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([timestamp, input_code, check_digit, full_gtin])
+
+    def get_ean13_svg_content(self, full_code):
+        if len(full_code) != 13:
+            return None
+            
+        # تقسيم الكود
+        first_digit = int(full_code[0])
+        left_digits = full_code[1:7]
+        right_digits = full_code[7:]
+        
+        # تحديد نمط التشفير للجزء الأيسر
+        structure = self.STRUCTURE[first_digit]
+        
+        # بناء السلسلة الثنائية
+        binary_string = "101" # Start Guard
+        
+        # Left Side
+        for i in range(6):
+            digit = int(left_digits[i])
+            coding = structure[i]
+            if coding == 'L':
+                binary_string += self.L_CODES[digit]
+            else:
+                binary_string += self.G_CODES[digit]
+                
+        binary_string += "01010" # Center Guard
+        
+        # Right Side
+        for i in range(6):
+            digit = int(right_digits[i])
+            binary_string += self.R_CODES[digit]
+            
+        binary_string += "101" # End Guard
+        
+        # إعدادات الرسم
+        module_width = 2
+        short_bar_height = 110  # Increased to match JS/Original
+        long_bar_height = 123   # Increased to match JS/Original
+        font_size = 20
+        total_width = (len(binary_string) + 14) * module_width 
+        total_height = long_bar_height + 10 # Reduced padding
+        start_x = 10 * module_width
+        
+        # إنشاء محتوى SVG
+        svg_content = f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{total_height}" viewBox="0 0 {total_width} {total_height}">\n'
+        svg_content += f'<rect width="100%" height="100%" fill="white"/>\n'
+        
+        # رسم الخطوط
+        for i, bit in enumerate(binary_string):
+            if bit == '1':
+                x = start_x + (i * module_width)
+                # حراس البداية، المنتصف، والنهاية يكونون أطول
+                is_guard = (i < 3) or (i >= 45 and i < 50) or (i >= 92)
+                h = long_bar_height if is_guard else short_bar_height
+                svg_content += f'<rect x="{x}" y="0" width="{module_width}" height="{h}" fill="black" shape-rendering="crispEdges"/>\n'
+        
+        # إضافة النصوص
+        text_y = long_bar_height + 2 # Moved up significantly (was +15)
+        
+        # الرقم الأول
+        svg_content += f'<text x="{start_x - 10}" y="{text_y}" font-family="monospace" font-size="{font_size}" text-anchor="end">{first_digit}</text>\n'
+        
+        # الجزء الأيسر
+        left_x_str = start_x + (3 * module_width) + (3.5 * module_width) 
+        for i, d in enumerate(left_digits):
+            x = left_x_str + (i * 7 * module_width)
+            svg_content += f'<text x="{x}" y="{text_y}" font-family="monospace" font-size="{font_size}" text-anchor="middle">{d}</text>\n'
+            
+        # الجزء الأيمن
+        right_x_str = start_x + (50 * module_width) + (3.5 * module_width)
+        for i, d in enumerate(right_digits):
+            x = right_x_str + (i * 7 * module_width)
+            svg_content += f'<text x="{x}" y="{text_y}" font-family="monospace" font-size="{font_size}" text-anchor="middle">{d}</text>\n'
+
+        # علامة >
+        svg_content += f'<text x="{start_x + (95 * module_width) + 10}" y="{text_y}" font-family="monospace" font-size="{font_size}" text-anchor="start">&gt;</text>\n'
+        
+        svg_content += '</svg>'
+        return svg_content
+
+    def save_svg(self):
+        full_code = self.full_code_entry.get()
+        if not full_code:
+            return
+            
+        svg_content = self.get_ean13_svg_content(full_code)
+        if not svg_content:
+            return
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".svg", filetypes=[("SVG files", "*.svg")], initialfile=f"EAN13_{full_code}.svg")
+        if file_path:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(svg_content)
+            messagebox.showinfo("تم الحفظ", f"تم حفظ الباركود بنجاح في:\n{file_path}")
+
+    def batch_export(self):
+        start_code_str = self.code_entry.get().strip().replace('-', '').replace(' ', '')
+        
+        if not start_code_str.isdigit() or len(start_code_str) != 12:
+            messagebox.showerror("خطأ", "يجب إدخال 12 رقم صحيح في خانة المنتج.")
+            return
+            
+        try:
+            count = int(self.count_var.get())
+        except:
+            count = 1
+            
+        if count < 1: count = 1
+        if count > 100:
+            if not messagebox.askyesno("تأكيد", f"لقد اخترت عدداً كبيراً ({count}). قد يستغرق الأمر بعض الوقت. هل أنت متأكد؟"):
+                return
+
+        # طلب مكان حفظ الملف المضغوط
+        zip_path = filedialog.asksaveasfilename(
+            defaultextension=".zip",
+            filetypes=[("ZIP files", "*.zip")],
+            initialfile=f"Barcodes_Batch_{start_code_str}_x{count}.zip",
+            title="اختر مكان حفظ الملف المضغوط"
+        )
+        
+        if not zip_path:
+            return
+
+        current_val = int(start_code_str)
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for _ in range(count):
+                    # 1. Prepare Code
+                    current_code_str = str(current_val).zfill(12)
+                    
+                    # 2. Check Digit
+                    reversed_digits = current_code_str[::-1]
+                    total = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(reversed_digits))
+                    check_digit = (10 - (total % 10)) % 10
+                    full_gtin = current_code_str + str(check_digit)
+                    
+                    # 3. Generate content
+                    svg_content = self.get_ean13_svg_content(full_gtin)
+                    
+                    # 4. Write to ZIP
+                    zipf.writestr(f"EAN13_{full_gtin}.svg", svg_content)
+                    
+                    # 5. History
+                    self.save_to_history(current_code_str, check_digit, full_gtin)
+                    
+                    # Increment for next
+                    current_val += 1
+            
+            # Update UI for next valid code
+            final_next_code = str(current_val).zfill(12)
+            self.clear_fields()
+            self.code_entry.insert(0, final_next_code)
+            self.load_history()
+            
+            messagebox.showinfo("نجاح", f"تم توليد {count} باركود وحفظهم في الملف المضغوط بنجاح!\nالرقم التالي الجاهز: {final_next_code}")
+            
+        except Exception as e:
+            messagebox.showerror("حدث خطأ", f"فشلت العملية: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
