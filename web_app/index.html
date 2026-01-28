@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KARAHOCA Barcode Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- استدعاء مكتبة Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <div class="main-container">
+        <header>
+            <h1>KARAHOCA BARCODE PRO</h1>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('generator')">📠 مولد الباركود</button>
+                <button class="tab-btn" onclick="switchTab('history')">📜 سجل العمليات</button>
+            </div>
+        </header>
+
+        <!-- تبويب المولد -->
+        <div id="generator-tab" class="tab-content active">
+            <div class="input-group">
+                <label>أدخل رقم المنتج (12 خانة):</label>
+                <input type="text" id="inputCode" placeholder="مثال: 869924369411" maxlength="12">
+            </div>
+
+            <div class="actions">
+                <button class="btn secondary" onclick="clearFields()">مسح الحقول</button>
+                <button class="btn info" onclick="incrementCode()">(+1)</button>
+                <button class="btn primary" onclick="calculate()">حساب وتسجيل</button>
+            </div>
+
+            <div class="result-box">
+                <div class="result-row">
+                    <span>رقم التحقق:</span>
+                    <span id="checkDigit" class="highlight">-</span>
+                </div>
+                <div class="result-row">
+                    <span>الباركود الكامل:</span>
+                    <input type="text" id="fullBarcode" readonly>
+                </div>
+            </div>
+
+            <button id="btnExport" class="btn success full-width" onclick="exportSVG()" disabled>💾 حفظ صورة الباركود (SVG)</button>
+
+            <div class="recent-bar">
+                <span>آخر الأرقام المستخدمة:</span>
+                <span id="recentDisplay">...</span>
+            </div>
+        </div>
+
+        <!-- تبويب السجل -->
+        <div id="history-tab" class="tab-content">
+            <div class="toolbar">
+                <button class="btn secondary" onclick="loadHistory()">تحديث السجل</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>التوقيت</th>
+                        <th>المدخل</th>
+                        <th>التحقق</th>
+                        <th>الكامل</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                    <!-- البيانات هنا -->
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            Developed for KARAHOCA TEMİZLİK
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
