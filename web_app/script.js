@@ -181,7 +181,7 @@ async function loadHistory() {
         const { data, error } = await _supabase
             .from('barcode_history')
             .select('*')
-            .order('created_at', { ascending: false })
+            .order('input_code', { ascending: false })
             .limit(50);
 
         if (data) historyData = data;
@@ -191,6 +191,12 @@ async function loadHistory() {
     // إذا فشل Supabase أو لم يكن موجوداً نستخدم المحلي
     if (historyData.length === 0) {
         historyData = JSON.parse(localStorage.getItem('barcode_history') || '[]');
+        // Sort by input_code descending
+        historyData.sort((a, b) => {
+            if (a.input_code < b.input_code) return 1;
+            if (a.input_code > b.input_code) return -1;
+            return 0;
+        });
     }
 
     tbody.innerHTML = '';

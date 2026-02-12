@@ -133,11 +133,16 @@ class KarahocaBarcodeApp:
             with open("barcode_history.csv", "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 rows = list(reader)
-                for row in reversed(rows): # الأحدث أولاً
-                    if len(row) == 4:
-                        self.tree.insert('', 'end', values=row)
-                        if len(recent_items) < 3:
-                            recent_items.append(row[1])
+                # Filter valid rows
+                valid_rows = [r for r in rows if len(r) == 4]
+                # Sort by input code (index 1) descending (Largest at top)
+                # Convert to int for proper numeric sort, though string sort works for fixed length
+                valid_rows.sort(key=lambda x: str(x[1]), reverse=True)
+
+                for row in valid_rows:
+                    self.tree.insert('', 'end', values=row)
+                    if len(recent_items) < 3:
+                        recent_items.append(row[1])
         except Exception as e:
             pass
             
