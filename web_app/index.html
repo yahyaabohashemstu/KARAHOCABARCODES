@@ -71,11 +71,14 @@
         <div id="history-tab" class="tab-content">
             <div class="toolbar" style="display: flex; gap: 10px; margin-bottom: 10px;">
                 <button class="btn secondary" onclick="loadHistory()" style="flex: 1;">🔄 تحديث السجل</button>
-                <button class="btn danger" onclick="clearHistory()" style="flex: 1;">🗑️ حذف السجل كاملاً</button>
+                <button class="btn secondary" onclick="loadHistory()" style="flex: 1;">🔄 تحديث السجل</button>
+                <button class="btn warning" onclick="deleteSelected()" style="flex: 1;">🗑️ حذف المحدد</button>
+                <button class="btn danger" onclick="clearHistory()" style="flex: 1;">❌ حذف الكل</button>
             </div>
             <table>
                 <thead>
                     <tr>
+                        <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
                         <th>التوقيت</th>
                         <th>المدخل</th>
                         <th>التحقق</th>

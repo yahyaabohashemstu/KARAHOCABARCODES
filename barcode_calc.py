@@ -120,6 +120,13 @@ class KarahocaBarcodeApp:
         slider.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
 
+        # زر حذف المحدد
+        btn_frame = tk.Frame(container)
+        btn_frame.pack(fill="x", pady=5)
+        
+        ttk.Button(btn_frame, text="حذف المحدد (Delete Selected)", command=self.delete_selected).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="حذف الكل (Delete All)", command=self.clear_history).pack(side="left", padx=5)
+
     def load_history(self):
         # تنظيف الجدول
         for item in self.tree.get_children():
@@ -230,6 +237,62 @@ class KarahocaBarcodeApp:
         with open("barcode_history.csv", "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, input_code, check_digit, full_gtin])
+
+    def delete_selected(self):
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showwarning("تنبيه", "الرجاء تحديد سجل واحد على الأقل للحذف.")
+            return
+            
+        if not messagebox.askyesno("تأكيد", f"هل أنت متأكد من حذف {len(selected_items)} سجل/سجلات؟"):
+            return
+
+        # Get values of selected rows to identify them
+        items_to_delete = []
+        for item in selected_items:
+            # values is a tuple of strings corresponding to columns
+            values = self.tree.item(item, 'values')
+            # (date, input, check, full)
+            if values:
+                items_to_delete.append(values)
+
+        # Read all existing rows
+        if not os.path.exists("barcode_history.csv"):
+            return
+
+        new_rows = []
+        with open("barcode_history.csv", "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                # Check if this row is in our delete list
+                # row structure: [date, input, check, full]
+                # We need to match all fields to be safe
+                is_deleted = False
+                for del_item in items_to_delete:
+                    # Convert match to list for comparison if tuple
+                    if list(row) == list(del_item):
+                        is_deleted = True
+                        break
+                
+                if not is_deleted:
+                    new_rows.append(row)
+
+        # Write back
+        with open("barcode_history.csv", "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerows(new_rows)
+
+        self.load_history()
+        messagebox.showinfo("تم", "تم حذف السجلات المحددة بنجاح.")
+
+    def clear_history(self):
+        if not messagebox.askyesno("تأكيد", "هل أنت متأكد من حذف السجل كاملاً؟"):
+            return
+            
+        if os.path.exists("barcode_history.csv"):
+            os.remove("barcode_history.csv")
+            self.load_history()
+            messagebox.showinfo("تم", "تم حذف السجل كاملاً.")
 
     def get_ean13_svg_content(self, full_code):
         if len(full_code) != 13:

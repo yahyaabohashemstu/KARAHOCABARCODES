@@ -173,7 +173,7 @@ async function updateRecentDisplay() {
 
 async function loadHistory() {
     const tbody = document.getElementById('historyTableBody');
-    tbody.innerHTML = '<tr><td colspan="4">جاري التحميل...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">جاري التحميل...</td></tr>';
 
     let historyData = [];
 
@@ -200,11 +200,25 @@ async function loadHistory() {
     }
 
     tbody.innerHTML = '';
-    historyData.forEach(row => {
+    historyData.forEach((row, index) => {
         const tr = document.createElement('tr');
         // تنسيق التاريخ
         const dateStr = new Date(row.created_at).toLocaleString('en-GB');
+
+        // Value for checkbox: ID if exists (Supabase), otherwise index (Local)
+        // We prefix to know source: 'db_' + id or 'loc_' + index
+        let checkVal = '';
+        if (row.id) checkVal = 'db_' + row.id;
+        else checkVal = 'loc_' + index; // Note: Index might shift if not careful, but usually loadHistory refreshes
+
+        // Better: For Local, we can use timestamp + code as unique key if needed, but index is easier if we reload after delete.
+        // Let's use JSON stringify for local to be safe? No, too long.
+        // Let's stick to simple ID for DB, and CreatedAt for local (as it acts as ID)
+
+        const rowId = row.id ? row.id : row.created_at;
+
         tr.innerHTML = `
+            <td><input type="checkbox" class="row-checkbox" value="${rowId}" data-is-db="${!!row.id}"></td>
             <td>${dateStr}</td>
             <td>${row.input_code}</td>
             <td>${row.check_digit}</td>
@@ -212,6 +226,70 @@ async function loadHistory() {
         `;
         tbody.appendChild(tr);
     });
+}
+
+function toggleSelectAll() {
+    const mainCheck = document.getElementById('selectAll');
+    const rows = document.querySelectorAll('.row-checkbox');
+    rows.forEach(cb => cb.checked = mainCheck.checked);
+}
+
+async function deleteSelected() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert("الرجاء تحديد سجل واحد على الأقل.");
+        return;
+    }
+
+    if (!confirm(`هل أنت متأكد من حذف ${checkboxes.length} سجل؟`)) return;
+
+    const btn = document.querySelector('button[onclick="deleteSelected()"]');
+    const oldText = btn.innerText;
+    btn.innerText = "جاري الحذف...";
+    btn.disabled = true;
+
+    try {
+        const dbIds = [];
+        const localKeys = []; // We'll use created_at for local identification
+
+        checkboxes.forEach(cb => {
+            if (cb.dataset.isDb === "true") {
+                dbIds.push(cb.value); // IDs are bigints/strings
+            } else {
+                localKeys.push(cb.value); // created_at timestamp
+            }
+        });
+
+        // 1. Supabase Delete
+        if (dbIds.length > 0 && _supabase) {
+            const { error } = await _supabase
+                .from('barcode_history')
+                .delete()
+                .in('id', dbIds);
+
+            if (error) throw error;
+        }
+
+        // 2. Local Storage Delete
+        if (localKeys.length > 0) {
+            let local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
+            // Filter out items where created_at matches any key in localKeys
+            local = local.filter(item => !localKeys.includes(item.created_at));
+            localStorage.setItem('barcode_history', JSON.stringify(local));
+        }
+
+        await loadHistory();
+        updateRecentDisplay();
+        document.getElementById('selectAll').checked = false;
+        alert("تم الحذف بنجاح ✅");
+
+    } catch (e) {
+        console.error(e);
+        alert("حدث خطأ: " + e.message);
+    } finally {
+        btn.innerText = oldText;
+        btn.disabled = false;
+    }
 }
 
 async function clearHistory() {
