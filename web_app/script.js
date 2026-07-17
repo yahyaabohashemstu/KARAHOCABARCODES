@@ -1,29 +1,41 @@
 
 // ==========================================
-// إعدادات SUPABASE - يجب تعبئة هذه الحقول
+// عميل الواجهة الخلفية (SQLite عبر REST)
 // ==========================================
-const SUPABASE_URL = 'https://jgzepchquakdocjzjrkv.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpnemVwY2hxdWFrZG9janpqcmt2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1ODI5ODMsImV4cCI6MjA4NTE1ODk4M30.CluRqnJv2ibc69esuQTtp50saS6oD8SIxKlKtSASYXE';
+// الواجهة تُقدَّم من نفس خادم Flask الذي يوفّر /api (same-origin) — لا حاجة لعنوان خارجي.
+const API_BASE = '';
+const LOCAL_KEY = 'barcode_history';
 
-// تهيئة العميل
-let _supabase = null;
-if (SUPABASE_URL !== 'YOUR_SUPABASE_URL_HERE') {
-    // التأكد من أن المكتبة تم تحميلها
-    if (typeof supabase !== 'undefined') {
-        _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    } else {
-        console.error("Supabase library not loaded!");
+// طلب REST موحّد؛ يرمي استثناءً عند فشل الشبكة أو رمز حالة غير ناجح.
+async function apiRequest(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
     }
-} else {
-    console.warn("Supabase keys are missing. Using local mode simulation.");
+    const res = await fetch(API_BASE + path, opts);
+    if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { const j = await res.json(); if (j && j.error) detail = j.error; } catch (_) { }
+        throw new Error(detail);
+    }
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
 }
+
+// كاش محلي احتياطي (يُستخدم فقط عند تعذّر الوصول للخادم)
+const readLocal = () => JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]');
+const writeLocal = (arr) => localStorage.setItem(LOCAL_KEY, JSON.stringify(arr));
+const newLocalId = () => (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID() : (Date.now() + '_' + Math.random());
 
 // ==========================================
 // تعريف ثوابت التشفير (EAN-13 Patterns)
 // ==========================================
 const L_CODES = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"];
 const G_CODES = ["0100111", "0110011", "0011011", "0100001", "0011101", "0111001", "0000101", "0010001", "0001001", "0010111"];
-const R_CODES = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001000", "1010000", "1000100", "1001000", "1110100"];
+const R_CODES = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001110", "1010000", "1000100", "1001000", "1110100"];
 const STRUCTURE = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"];
 
 // ==========================================
@@ -37,8 +49,10 @@ function switchTab(tabId) {
     document.getElementById(tabId + '-tab').classList.add('active');
     // البحث عن الزر النشط وتفعيله
     const btns = document.querySelectorAll('.tab-btn');
-    if (tabId === 'generator') btns[0].classList.add('active');
-    else btns[1].classList.add('active');
+    btns.forEach(b => b.setAttribute('aria-selected', 'false'));
+    const activeBtn = (tabId === 'generator') ? btns[0] : btns[1];
+    activeBtn.classList.add('active');
+    activeBtn.setAttribute('aria-selected', 'true');
 
     if (tabId === 'history') loadHistory();
 }
@@ -52,18 +66,21 @@ function clearFields() {
 }
 
 async function getLastUsedCode() {
-    // 1. محاولة من Supabase
-    if (_supabase) {
-        const { data, error } = await _supabase
-            .from('barcode_history')
-            .select('input_code')
-            .order('created_at', { ascending: false })
-            .limit(1);
-        if (data && data.length > 0) return data[0].input_code;
+    // 1. من الخادم (المصدر الموثوق)
+    try {
+        const data = await apiRequest('GET', '/api/history?order=code&limit=1');
+        if (Array.isArray(data) && data.length > 0) return data[0].input_code;
+        return null; // الخادم متاح لكن لا سجلات
+    } catch (e) {
+        console.warn('getLastUsedCode: تعذّر الوصول للخادم، سيُستخدم الكاش المحلي', e);
     }
-    // 2. محاولة من LocalStorage (احتياطي)
-    const local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
-    if (local.length > 0) return local[0].input_code;
+    // 2. احتياطي من LocalStorage عند تعذّر الوصول للخادم
+    const local = readLocal();
+    if (local.length > 0) {
+        // ترتيب تنازلي حسب رقم المنتج (الأصفار البادئة تجعل الترتيب النصي = الرقمي)
+        local.sort((a, b) => (a.input_code < b.input_code ? 1 : (a.input_code > b.input_code ? -1 : 0)));
+        return local[0].input_code;
+    }
 
     return null;
 }
@@ -92,6 +109,10 @@ async function incrementCode() {
     try {
         const nextVal = BigInt(currentVal) + 1n;
         const newCode = nextVal.toString().padStart(12, '0');
+        if (newCode.length > 12) {
+            alert("تم بلوغ الحد الأقصى للرقم (12 خانة).");
+            return;
+        }
         document.getElementById('inputCode').value = newCode;
     } catch (e) {
         alert("خطأ في الرقم");
@@ -136,34 +157,35 @@ async function saveRecord(input, check, full) {
     const record = {
         input_code: input,
         check_digit: String(check),
-        full_gtin: full,
-        created_at: new Date().toISOString()
+        full_gtin: full
     };
 
-    // 1. Supabase
-    if (_supabase) {
-        const { error } = await _supabase.from('barcode_history').insert([record]);
-        if (error) console.error("Supabase Error:", error);
+    // 1. الخادم (المصدر الموثوق) — يُرجِع السجل بمعرّف وطابع زمني من الخادم
+    let saved = null;
+    try {
+        saved = await apiRequest('POST', '/api/history', record);
+    } catch (e) {
+        console.error('saveRecord: فشل الحفظ في الخادم', e);
     }
 
-    // 2. LocalStorage (كاش محلي سريع)
-    const local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
-    local.unshift(record); // إضافة في البداية
+    // 2. كاش محلي سريع/احتياطي
+    const local = readLocal();
+    local.unshift({
+        ...(saved || { ...record, created_at: new Date().toISOString() }),
+        local_id: newLocalId()
+    }); // إضافة في البداية
     if (local.length > 50) local.pop(); // الاحتفاظ بآخر 50 فقط محلياً
-    localStorage.setItem('barcode_history', JSON.stringify(local));
+    writeLocal(local);
+    return saved;
 }
 
 async function updateRecentDisplay() {
     let recents = [];
-    if (_supabase) {
-        const { data } = await _supabase
-            .from('barcode_history')
-            .select('input_code')
-            .order('created_at', { ascending: false })
-            .limit(2);
-        if (data) recents = data.map(r => r.input_code);
-    } else {
-        const local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
+    try {
+        const data = await apiRequest('GET', '/api/history?order=recent&limit=2');
+        recents = (data || []).map(r => r.input_code);
+    } catch (e) {
+        const local = readLocal();
         recents = local.slice(0, 2).map(r => r.input_code);
     }
 
@@ -176,21 +198,18 @@ async function loadHistory() {
     tbody.innerHTML = '<tr><td colspan="5">جاري التحميل...</td></tr>';
 
     let historyData = [];
+    let usedApi = false;
 
-    if (_supabase) {
-        const { data, error } = await _supabase
-            .from('barcode_history')
-            .select('*')
-            .order('input_code', { ascending: false })
-            .limit(50);
-
-        if (data) historyData = data;
-        else if (error) console.error(error);
+    try {
+        historyData = await apiRequest('GET', '/api/history?order=code&limit=50') || [];
+        usedApi = true;
+    } catch (e) {
+        console.error('loadHistory: تعذّر الوصول للخادم، سيُستخدم الكاش المحلي', e);
     }
 
-    // إذا فشل Supabase أو لم يكن موجوداً نستخدم المحلي
-    if (historyData.length === 0) {
-        historyData = JSON.parse(localStorage.getItem('barcode_history') || '[]');
+    // نلجأ للكاش المحلي فقط عند تعذّر الوصول للخادم (النتيجة الفارغة من الخادم ليست خطأ)
+    if (!usedApi) {
+        historyData = readLocal();
         // Sort by input_code descending
         historyData.sort((a, b) => {
             if (a.input_code < b.input_code) return 1;
@@ -205,25 +224,22 @@ async function loadHistory() {
         // تنسيق التاريخ
         const dateStr = new Date(row.created_at).toLocaleString('en-GB');
 
-        // Value for checkbox: ID if exists (Supabase), otherwise index (Local)
-        // We prefix to know source: 'db_' + id or 'loc_' + index
-        let checkVal = '';
-        if (row.id) checkVal = 'db_' + row.id;
-        else checkVal = 'loc_' + index; // Note: Index might shift if not careful, but usually loadHistory refreshes
+        // معرّف الصف: id من قاعدة البيانات، وإلا local_id المحلي، وإلا الطابع الزمني (توافق قديم)
+        const rowId = row.id ? row.id : (row.local_id || row.created_at);
 
-        // Better: For Local, we can use timestamp + code as unique key if needed, but index is easier if we reload after delete.
-        // Let's use JSON stringify for local to be safe? No, too long.
-        // Let's stick to simple ID for DB, and CreatedAt for local (as it acts as ID)
+        // بناء الخلايا عبر DOM APIs حتى لا تُفسَّر القيم كـ HTML (حماية من XSS المخزَّن)
+        const tdChk = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'row-checkbox';
+        cb.value = rowId;
+        cb.dataset.isDb = String(!!row.id);
+        cb.setAttribute('aria-label', 'تحديد السجل ' + (row.input_code || ''));
+        tdChk.appendChild(cb);
 
-        const rowId = row.id ? row.id : row.created_at;
-
-        tr.innerHTML = `
-            <td><input type="checkbox" class="row-checkbox" value="${rowId}" data-is-db="${!!row.id}"></td>
-            <td>${dateStr}</td>
-            <td>${row.input_code}</td>
-            <td>${row.check_digit}</td>
-            <td>${row.full_gtin}</td>
-        `;
+        // خلية نصية خاملة (textContent) لا تُفسَّر كترميز
+        const mk = (v) => { const td = document.createElement('td'); td.textContent = (v === undefined || v === null) ? '' : v; return td; };
+        tr.append(tdChk, mk(dateStr), mk(row.input_code), mk(row.check_digit), mk(row.full_gtin));
         tbody.appendChild(tr);
     });
 }
@@ -250,33 +266,28 @@ async function deleteSelected() {
 
     try {
         const dbIds = [];
-        const localKeys = []; // We'll use created_at for local identification
+        const localKeys = [];
+        const gtins = [];
 
         checkboxes.forEach(cb => {
-            if (cb.dataset.isDb === "true") {
-                dbIds.push(cb.value); // IDs are bigints/strings
-            } else {
-                localKeys.push(cb.value); // created_at timestamp
-            }
+            const tr = cb.closest('tr');
+            const gtin = tr && tr.children[4] ? tr.children[4].textContent : null;
+            if (gtin) gtins.push(gtin);
+            if (cb.dataset.isDb === "true") dbIds.push(cb.value);
+            else localKeys.push(cb.value);
         });
 
-        // 1. Supabase Delete
-        if (dbIds.length > 0 && _supabase) {
-            const { error } = await _supabase
-                .from('barcode_history')
-                .delete()
-                .in('id', dbIds);
-
-            if (error) throw error;
+        // 1. حذف من الخادم عبر المعرّفات
+        if (dbIds.length > 0) {
+            await apiRequest('DELETE', '/api/history', { ids: dbIds });
         }
 
-        // 2. Local Storage Delete
-        if (localKeys.length > 0) {
-            let local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
-            // Filter out items where created_at matches any key in localKeys
-            local = local.filter(item => !localKeys.includes(item.created_at));
-            localStorage.setItem('barcode_history', JSON.stringify(local));
-        }
+        // 2. مزامنة الكاش المحلي: احذف بالمعرّف المحلي وبالباركود الكامل
+        let local = readLocal();
+        local = local.filter(item =>
+            !localKeys.includes(item.local_id || item.created_at) &&
+            !gtins.includes(item.full_gtin));
+        writeLocal(local);
 
         await loadHistory();
         updateRecentDisplay();
@@ -295,26 +306,19 @@ async function deleteSelected() {
 async function clearHistory() {
     if (!confirm("هل أنت متأكد من رغبتك في حذف جميع السجلات؟\nلا يمكن استرجاع البيانات بعد الحذف!")) return;
 
-    const btn = document.querySelector('#history-tab button');
+    const btn = document.querySelector('button[onclick="clearHistory()"]');
     const originalText = btn.innerText;
     btn.innerText = "جاري الحذف...";
     btn.disabled = true;
 
     try {
-        // ID > 0 is a standard way to match all rows if ID is standard serial
-        if (_supabase) {
-            const { error } = await _supabase
-                .from('barcode_history')
-                .delete()
-                .gt('id', 0);
+        // حذف كل السجلات من الخادم
+        await apiRequest('DELETE', '/api/history/all');
 
-            if (error) throw error;
-        }
+        // مسح الكاش المحلي أيضاً
+        localStorage.removeItem(LOCAL_KEY);
 
-        // Local Storage
-        localStorage.removeItem('barcode_history');
-
-        // Refresh
+        // تحديث العرض
         await loadHistory();
         updateRecentDisplay();
         alert("تم حذف السجل بنجاح ✅");
@@ -369,7 +373,7 @@ function exportSVG() {
     const shortBarH = 110;
     const longBarH = 123;
     const fontSize = 20;
-    const totalWidth = (95 + 14) * moduleWidth; // تقريباً 196
+    const totalWidth = (9 + 95 + 7) * moduleWidth; // 9 يسار + 95 قضيباً + 7 يمين = 111 (منطقة هادئة كافية)
     const totalHeight = longBarH + 10;
 
     const startX = 9 * moduleWidth;
@@ -491,23 +495,29 @@ async function generateBatch() {
         const content = await zip.generateAsync({ type: "blob" });
         saveAs(content, `Barcodes_Batch_${startCodeStr}_x${count}.zip`);
 
-        // 6. Bulk Insert to Supabase
-        if (_supabase) {
-            const { error } = await _supabase.from('barcode_history').insert(recordsToInsert);
-            if (error) console.error("Batch Insert Error", error);
-        } else {
-            // Local fallback
-            const local = JSON.parse(localStorage.getItem('barcode_history') || '[]');
-            // Prepend all (reverse order to keep newest first)
-            recordsToInsert.reverse().forEach(r => local.unshift(r));
-            if (local.length > 50) local.splice(50);
-            localStorage.setItem('barcode_history', JSON.stringify(local));
+        // 6. إدراج جماعي في الخادم
+        let inserted = null;
+        try {
+            inserted = await apiRequest('POST', '/api/history/batch', {
+                items: recordsToInsert.map(r => ({
+                    input_code: r.input_code, check_digit: r.check_digit, full_gtin: r.full_gtin
+                }))
+            });
+        } catch (e) {
+            console.error('Batch insert failed', e);
         }
+
+        // كاش محلي (الأحدث/أعلى رقم عند الفهرس 0)
+        const local = readLocal();
+        const source = (Array.isArray(inserted) && inserted.length) ? inserted : recordsToInsert;
+        source.forEach(r => local.unshift({ ...r, local_id: newLocalId() }));
+        if (local.length > 50) local.splice(50);
+        writeLocal(local);
 
         // Update UI
         updateRecentDisplay();
         document.getElementById('inputCode').value = currentBigInt.toString().padStart(12, '0'); // Show next available
-        alert(`تم توليد ${count} باركود وتحميلهم بننجاح! ✅`);
+        alert(`تم توليد ${count} باركود وتحميلهم بنجاح! ✅`);
 
     } catch (e) {
         console.error(e);
@@ -527,7 +537,7 @@ function createSVGString(code) {
     const shortBarH = 110;
     const longBarH = 123;
     const fontSize = 20;
-    const totalWidth = (95 + 14) * moduleWidth;
+    const totalWidth = (9 + 95 + 7) * moduleWidth; // 9 يسار + 95 قضيباً + 7 يمين = 111 (منطقة هادئة كافية)
     const totalHeight = longBarH + 10;
     const startX = 9 * moduleWidth;
 

@@ -1,0 +1,23 @@
+# تقليل سياق البناء وحجم الصورة
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+data/
+*.db
+*.db-wal
+*.db-shm
+build/
+dist/
+*.spec
+barcode_calc.py
+barcode_history.csv
+node_modules/
+.DS_Store
+Thumbs.db
+*.md

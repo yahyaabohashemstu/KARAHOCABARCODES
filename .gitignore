@@ -1,0 +1,16 @@
+# بيانات SQLite المحلية (لا تُرفع؛ تعيش على volume الخادم)
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# بايثون
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# نظام التشغيل / المحرّر
+.DS_Store
+Thumbs.db

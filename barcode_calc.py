@@ -2,8 +2,16 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import csv
 import os
+import sys
 from datetime import datetime
 import zipfile
+
+# ربط ملف السجل بمجلد السكربت/الملف التنفيذي بغض النظر عن مجلد التشغيل الحالي (CWD)
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)  # PyInstaller onefile: مجلد الـ exe الحقيقي وليس _MEIPASS
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+HISTORY_FILE = os.path.join(_BASE_DIR, "barcode_history.csv")
 
 class KarahocaBarcodeApp:
     def __init__(self, root):
@@ -15,7 +23,7 @@ class KarahocaBarcodeApp:
         # الأنماط الثنائية للأرقام (L-code, G-code, R-code)
         self.L_CODES = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"]
         self.G_CODES = ["0100111", "0110011", "0011011", "0100001", "0011101", "0111001", "0000101", "0010001", "0001001", "0010111"]
-        self.R_CODES = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001000", "1010000", "1000100", "1001000", "1110100"]
+        self.R_CODES = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001110", "1010000", "1000100", "1001000", "1110100"]
         
         # هيكلية التشفير حسب الرقم الأول (يسار)
         self.STRUCTURE = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"]
@@ -132,16 +140,16 @@ class KarahocaBarcodeApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
             
-        if not os.path.exists("barcode_history.csv"):
+        if not os.path.exists(HISTORY_FILE):
             return
 
         recent_items = []
         try:
-            with open("barcode_history.csv", "r", encoding="utf-8") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 rows = list(reader)
                 # Filter valid rows
-                valid_rows = [r for r in rows if len(r) == 4]
+                valid_rows = [r for r in rows if len(r) == 4 and r[1].isdigit()]
                 # Sort by input code (index 1) descending (Largest at top)
                 # Convert to int for proper numeric sort, though string sort works for fixed length
                 valid_rows.sort(key=lambda x: str(x[1]), reverse=True)
@@ -151,7 +159,7 @@ class KarahocaBarcodeApp:
                     if len(recent_items) < 3:
                         recent_items.append(row[1])
         except Exception as e:
-            pass
+            print(f"load_history failed to read history file: {e}")
             
         # تحديث شريط الحالة
         if recent_items:
@@ -159,13 +167,16 @@ class KarahocaBarcodeApp:
 
     def get_recent_inputs(self, count=1):
         recent_items = []
-        if os.path.exists("barcode_history.csv"):
-             with open("barcode_history.csv", "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-                for row in rows[-count:]:
-                    if len(row) > 1:
-                        recent_items.append(row[1])
+        try:
+            if os.path.exists(HISTORY_FILE):
+                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    rows = list(reader)
+                    for row in rows[-count:]:
+                        if len(row) > 1 and row[1].isdigit():
+                            recent_items.append(row[1])
+        except Exception:
+            return []
         return recent_items
 
     def increment_code(self):
@@ -190,6 +201,9 @@ class KarahocaBarcodeApp:
         try:
             # Convert to int, add 1, convert back to string with zfill
             next_val = int(current_val) + 1
+            if next_val > 999999999999:
+                messagebox.showerror("خطأ", "تم الوصول إلى الحد الأقصى للرقم (12 خانة). لا يمكن الزيادة أكثر.")
+                return
             new_code = str(next_val).zfill(12)
             
             self.clear_fields()
@@ -234,7 +248,7 @@ class KarahocaBarcodeApp:
 
     def save_to_history(self, input_code, check_digit, full_gtin):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open("barcode_history.csv", "a", newline="", encoding="utf-8") as f:
+        with open(HISTORY_FILE, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, input_code, check_digit, full_gtin])
 
@@ -257,28 +271,30 @@ class KarahocaBarcodeApp:
                 items_to_delete.append(values)
 
         # Read all existing rows
-        if not os.path.exists("barcode_history.csv"):
+        if not os.path.exists(HISTORY_FILE):
             return
 
+        from collections import Counter
+        # عدّ عدد النسخ المطلوب حذفها لكل صف محدد، حتى لا تُحذف كل الصفوف المتطابقة عند تحديد نسخة واحدة فقط.
+        to_delete_counts = Counter(tuple(v) for v in items_to_delete)
+
         new_rows = []
-        with open("barcode_history.csv", "r", encoding="utf-8") as f:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
             for row in reader:
                 # Check if this row is in our delete list
                 # row structure: [date, input, check, full]
                 # We need to match all fields to be safe
-                is_deleted = False
-                for del_item in items_to_delete:
-                    # Convert match to list for comparison if tuple
-                    if list(row) == list(del_item):
-                        is_deleted = True
-                        break
+                key = tuple(row)
+                is_deleted = to_delete_counts.get(key, 0) > 0
+                if is_deleted:
+                    to_delete_counts[key] -= 1
                 
                 if not is_deleted:
                     new_rows.append(row)
 
         # Write back
-        with open("barcode_history.csv", "w", newline="", encoding="utf-8") as f:
+        with open(HISTORY_FILE, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerows(new_rows)
 
@@ -289,8 +305,8 @@ class KarahocaBarcodeApp:
         if not messagebox.askyesno("تأكيد", "هل أنت متأكد من حذف السجل كاملاً؟"):
             return
             
-        if os.path.exists("barcode_history.csv"):
-            os.remove("barcode_history.csv")
+        if os.path.exists(HISTORY_FILE):
+            os.remove(HISTORY_FILE)
             self.load_history()
             messagebox.showinfo("تم", "تم حذف السجل كاملاً.")
 
@@ -332,7 +348,7 @@ class KarahocaBarcodeApp:
         short_bar_height = 110  # Increased to match JS/Original
         long_bar_height = 123   # Increased to match JS/Original
         font_size = 20
-        total_width = (len(binary_string) + 14) * module_width 
+        total_width = (10 + len(binary_string) + 7) * module_width  # 10 وحدات هامش يسار + 95 قضيباً + 7 وحدات هامش يمين 
         total_height = long_bar_height + 10 # Reduced padding
         start_x = 10 * module_width
         
@@ -420,6 +436,9 @@ class KarahocaBarcodeApp:
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for _ in range(count):
+                    # إيقاف التوليد إذا تجاوز الرقم نطاق 12 خانة
+                    if current_val > 999999999999:
+                        break
                     # 1. Prepare Code
                     current_code_str = str(current_val).zfill(12)
                     
@@ -431,6 +450,8 @@ class KarahocaBarcodeApp:
                     
                     # 3. Generate content
                     svg_content = self.get_ean13_svg_content(full_gtin)
+                    if svg_content is None:
+                        break
                     
                     # 4. Write to ZIP
                     zipf.writestr(f"EAN13_{full_gtin}.svg", svg_content)

@@ -1,0 +1,28 @@
+# Coolify: انشر باستخدام "Docker Compose". يوفّر هذا الملف قاعدة بيانات دائمة تلقائياً.
+services:
+  barcodegen:
+    build: .
+    container_name: karahoca-barcodegen
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/barcode.db
+      PORT: "8000"
+      WAITRESS_THREADS: "4"
+    volumes:
+      # قاعدة SQLite تعيش هنا وتنجو من عمليات إعادة النشر
+      - barcode_data:/data
+    expose:
+      - "8000"
+    # للتشغيل المحلي بـ `docker compose up` انزع التعليق عن السطرين التاليين.
+    # في Coolify لا حاجة لذلك — وكيل Coolify يوجّه النطاق إلى المنفذ 8000 تلقائياً.
+    # ports:
+    #   - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  barcode_data:

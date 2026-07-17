@@ -12,8 +12,17 @@ create table barcode_history (
 -- ينصح بضبط سياسات RLS لاحقاً للأمان
 alter table barcode_history enable row level security;
 
-create policy "Enable all access for all users"
-on barcode_history
-for all
-using (true)
-with check (true);
+-- سياسات مقيدة لكل عملية (بدون UPDATE — التطبيق لا يعدّل السجلات)
+create policy "anon_select" on barcode_history for select using (true);
+create policy "anon_insert" on barcode_history for insert with check (true);
+create policy "anon_delete" on barcode_history for delete using (true);
+
+-- قيود على مستوى قاعدة البيانات: بيانات رقمية فقط، توقف حقن XSS عند مستوى التخزين
+alter table barcode_history
+  add constraint input_code_numeric check (input_code ~ '^[0-9]{1,14}$'),
+  add constraint check_digit_numeric check (check_digit ~ '^[0-9]$'),
+  add constraint full_gtin_numeric check (full_gtin ~ '^[0-9]{13}$');
+
+-- ملاحظة: هذه سياسات لإعداد جديد. لقاعدة بيانات منشورة مسبقاً، احذف السياسة القديمة أولاً:
+--   drop policy "Enable all access for all users" on barcode_history;
+-- للعزل الكامل بين المستخدمين: فعّل مصادقة Supabase وأضف عمود user_id مع تقييد السياسات بـ auth.uid() = user_id.
