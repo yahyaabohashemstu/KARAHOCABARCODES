@@ -1,8 +1,10 @@
-# بيانات SQLite المحلية (لا تُرفع؛ تعيش على volume الخادم)
+# بيانات السجل (لا تُرفع — بيانات منتجات، والبيانات الحيّة في SQLite)
 /data/
 *.db
 *.db-wal
 *.db-shm
+barcode_history.csv
+*.csv.imported
 
 # بايثون
 __pycache__/
