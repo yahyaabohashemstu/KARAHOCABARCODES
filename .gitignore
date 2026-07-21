@@ -13,6 +13,9 @@ __pycache__/
 venv/
 env/
 
+# أسرار تلجرام (لا تُرفع)
+telegram.json
+
 # نظام التشغيل / المحرّر
 .DS_Store
 Thumbs.db

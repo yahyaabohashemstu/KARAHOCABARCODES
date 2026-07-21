@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 
 from flask import Flask, request, jsonify, send_from_directory, abort
 
+import telegram_notify
+
 # ---------------------------------------------------------------------------
 # المسارات (مستقلة عن مجلد التشغيل الحالي)
 # ---------------------------------------------------------------------------
@@ -129,6 +131,8 @@ def create_history():
         )
         conn.commit()
         new_id = cur.lastrowid
+    # إشعار تلجرام (غير حاجب؛ يُعطَّل تلقائياً إن لم يُضبط الإعداد)
+    telegram_notify.send_barcode_async(row["input_code"], row["full_gtin"])
     return jsonify(id=new_id, created_at=created_at, **row), 201
 
 

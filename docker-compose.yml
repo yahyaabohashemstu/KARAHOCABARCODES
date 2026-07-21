@@ -8,6 +8,9 @@ services:
       DB_PATH: /data/barcode.db
       PORT: "8000"
       WAITRESS_THREADS: "4"
+      # اختياري — إشعارات تلجرام عند كل باركود جديد (اضبطهما في Coolify؛ فارغة = مُعطّلة)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     volumes:
       # قاعدة SQLite تعيش هنا وتنجو من عمليات إعادة النشر
       - barcode_data:/data

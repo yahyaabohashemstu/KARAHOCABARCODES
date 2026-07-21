@@ -4,6 +4,10 @@ import csv
 import os
 import sys
 import sqlite3
+import json
+import threading
+import urllib.request
+import uuid
 from datetime import datetime
 import zipfile
 
@@ -478,6 +482,63 @@ class KarahocaBarcodeApp:
                 f.write(svg_content)
             messagebox.showinfo("تم الحفظ", f"تم حفظ الباركود بنجاح في:\n{file_path}")
 
+    def _telegram_config(self):
+        # (bot_token, chat_id) من ملف telegram.json بجانب الـ exe، أو من متغيّرات البيئة
+        try:
+            path = os.path.join(_BASE_DIR, "telegram.json")
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    cfg = json.load(f)
+                t = str(cfg.get("bot_token", "")).strip()
+                c = str(cfg.get("chat_id", "")).strip()
+                if t and c:
+                    return t, c
+        except Exception:
+            pass
+        t = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        c = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        return (t, c) if (t and c) else (None, None)
+
+    def _telegram_send_async(self, input_code, full_gtin):
+        # يُرسل الباركود (الرقم الأساسي + الكامل + ملف SVG) إلى تلجرام في خيط منفصل
+        token, chat = self._telegram_config()
+        if not token:
+            return
+        svg = self.get_ean13_svg_content(full_gtin)
+        if not svg:
+            return
+        api_base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
+
+        def worker():
+            try:
+                caption = (
+                    "🆕 <b>باركود جديد — KARAHOCA</b>\n\n"
+                    "🔢 <b>الرقم الأساسي:</b> <code>%s</code>\n"
+                    "🏷️ <b>الباركود الكامل:</b> <code>%s</code>" % (input_code, full_gtin)
+                )
+                boundary = "----Karahoca" + uuid.uuid4().hex
+                parts = []
+                for k, v in (("chat_id", chat), ("caption", caption), ("parse_mode", "HTML")):
+                    parts.append(("--" + boundary + "\r\n").encode())
+                    parts.append(('Content-Disposition: form-data; name="%s"\r\n\r\n' % k).encode())
+                    parts.append((str(v) + "\r\n").encode("utf-8"))
+                parts.append(("--" + boundary + "\r\n").encode())
+                parts.append(('Content-Disposition: form-data; name="document"; filename="EAN13_%s.svg"\r\n'
+                              % full_gtin).encode())
+                parts.append(("Content-Type: image/svg+xml\r\n\r\n").encode())
+                parts.append(svg.encode("utf-8"))
+                parts.append(("\r\n--" + boundary + "--\r\n").encode())
+                body = b"".join(parts)
+                url = "%s/bot%s/sendDocument" % (api_base, token)
+                req = urllib.request.Request(
+                    url, data=body,
+                    headers={"Content-Type": "multipart/form-data; boundary=" + boundary})
+                urllib.request.urlopen(req, timeout=20).read()
+            except Exception as e:
+                print("[telegram] send failed:", e)
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def load_history(self):
         # تنظيف الجدول
         for item in self.tree.get_children():
@@ -580,6 +641,9 @@ class KarahocaBarcodeApp:
         # حفظ في السجل
         self.save_to_history(raw_code, check_digit, full_gtin)
         self.load_history()
+
+        # إرسال تلقائي إلى تلجرام (يُعطَّل إن لم يُضبط telegram.json أو متغيّرات البيئة)
+        self._telegram_send_async(raw_code, full_gtin)
 
     def save_to_history(self, input_code, check_digit, full_gtin):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
