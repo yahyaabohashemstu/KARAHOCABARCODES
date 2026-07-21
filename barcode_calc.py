@@ -125,6 +125,10 @@ class KarahocaBarcodeApp:
         self.setup_history_ui(self.tab2)
         self.setup_verify_ui(self.tab3)
 
+        # تفعيل النسخ/اللصق (يعمل مع لوحة المفاتيح العربية) + قائمة الزر الأيمن على الحقول
+        for _w in (self.code_entry, self.full_code_entry, self.count_spin, self.verify_entry):
+            self._install_entry_clipboard(_w)
+
         # تحميل السجل عند الفتح
         self.load_history()
 
@@ -274,6 +278,51 @@ class KarahocaBarcodeApp:
         except Exception:
             pass
 
+    def _install_entry_clipboard(self, widget):
+        # قص/نسخ/لصق/تحديد الكل تعمل مع أي تخطيط لوحة مفاتيح (عربي/لاتيني) + قائمة بالزر الأيمن
+        widget.bind("<Control-KeyPress>", self._on_ctrl_key)
+        widget.bind("<Button-3>", self._show_entry_menu)
+
+    def _on_ctrl_key(self, event):
+        w = event.widget
+        kc = event.keycode           # رمز المفتاح الفيزيائي (مستقل عن التخطيط)
+        ks = (event.keysym or "").lower()
+        try:
+            if kc == 86 or ks == "v":
+                w.event_generate("<<Paste>>"); return "break"
+            if kc == 67 or ks == "c":
+                w.event_generate("<<Copy>>"); return "break"
+            if kc == 88 or ks == "x":
+                w.event_generate("<<Cut>>"); return "break"
+            if kc == 65 or ks == "a":
+                self._select_all_entry(w); return "break"
+        except Exception:
+            pass
+
+    def _select_all_entry(self, w):
+        try:
+            w.select_range(0, "end")
+            w.icursor("end")
+        except Exception:
+            try:
+                w.selection("range", 0, "end")
+            except Exception:
+                pass
+
+    def _show_entry_menu(self, event):
+        w = event.widget
+        menu = tk.Menu(w, tearoff=0)
+        menu.add_command(label="قص", command=lambda: w.event_generate("<<Cut>>"))
+        menu.add_command(label="نسخ", command=lambda: w.event_generate("<<Copy>>"))
+        menu.add_command(label="لصق", command=lambda: w.event_generate("<<Paste>>"))
+        menu.add_separator()
+        menu.add_command(label="تحديد الكل", command=lambda: self._select_all_entry(w))
+        try:
+            w.focus_set()
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
     def setup_verify_ui(self, container):
         frame = tk.Frame(container, bg=BG)
         frame.pack(expand=True, fill="both", padx=18, pady=18)
@@ -290,11 +339,26 @@ class KarahocaBarcodeApp:
         self.verify_status = tk.Label(frame, text="", bg=BG, font=("Segoe UI", 13, "bold"))
         self.verify_status.pack(fill="x")
 
-        # تفاصيل التفكيك
-        self.verify_details = tk.Label(frame, text="", bg=SURFACE2, fg=INK, justify="right",
-                                       anchor="e", font=("Consolas", 11), padx=12, pady=10,
-                                       relief="solid", bd=1)
-        self.verify_details.pack(fill="x", pady=10)
+        # تفاصيل التفكيك — شبكة صفوف (اسم الحقل عربي بخط Segoe UI، والقيمة منفصلة)
+        # هذا يتفادى خلط الاتجاهين ومشكلة عدم دعم Consolas للعربية.
+        details = tk.Frame(frame, bg=SURFACE2, highlightbackground=BORDER, highlightthickness=1)
+        details.pack(fill="x", pady=10)
+        details.columnconfigure(0, weight=1)
+        self._verify_val = {}
+        _rows = [
+            ("first",   "نظام الترقيم (أول رقم):", "Consolas"),
+            ("gs1",     "بادئة GS1:",              "Consolas"),
+            ("country", "الدولة:",                 "Segoe UI"),
+            ("product", "رمز المنتج (12 خانة):",   "Consolas"),
+            ("check",   "رقم التحقق (مُدخل/محسوب):", "Consolas"),
+        ]
+        for _i, (_key, _text, _fam) in enumerate(_rows):
+            tk.Label(details, text=_text, bg=SURFACE2, fg=INK2, font=("Segoe UI", 10, "bold"),
+                     anchor="e").grid(row=_i, column=1, sticky="e", padx=12, pady=4)
+            _v = tk.Label(details, text="-", bg=SURFACE2, fg=INK, font=(_fam, 12, "bold"), anchor="w")
+            _v.grid(row=_i, column=0, sticky="w", padx=12, pady=4)
+            self._verify_val[_key] = _v
+        self.verify_details = details
 
         # لوحة رسم الباركود
         self.verify_canvas = tk.Canvas(frame, bg="white", height=150,
@@ -365,7 +429,8 @@ class KarahocaBarcodeApp:
         self.verify_entry.insert(0, raw)
         if not raw.isdigit() or len(raw) != 13:
             self.verify_status.config(text="⚠ يجب إدخال 13 رقماً بالضبط.", fg=DANGER)
-            self.verify_details.config(text="")
+            for _v in self._verify_val.values():
+                _v.config(text="-")
             self.verify_canvas.delete("all")
             return
         first12 = raw[:12]
@@ -378,12 +443,11 @@ class KarahocaBarcodeApp:
             self.verify_status.config(text="✅ باركود صالح", fg=SUCCESS)
         else:
             self.verify_status.config(text=f"❌ غير صالح — رقم التحقق الصحيح: {computed}", fg=DANGER)
-        self.verify_details.config(text=(
-            f"نظام الترقيم (أول رقم): {raw[0]}\n"
-            f"بادئة GS1: {raw[:3]}  ({country})\n"
-            f"رمز المنتج (12 خانة): {first12}\n"
-            f"رقم التحقق (مُدخل / محسوب): {entered} / {computed}"
-        ))
+        self._verify_val["first"].config(text=raw[0])
+        self._verify_val["gs1"].config(text=raw[:3])
+        self._verify_val["country"].config(text=country)
+        self._verify_val["product"].config(text=first12)
+        self._verify_val["check"].config(text=f"{entered} / {computed}")
         self._draw_barcode(raw)
 
     def load_history(self):
