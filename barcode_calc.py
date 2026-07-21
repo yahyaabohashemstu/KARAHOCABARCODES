@@ -3,15 +3,17 @@ from tkinter import ttk, messagebox, filedialog
 import csv
 import os
 import sys
+import sqlite3
 from datetime import datetime
 import zipfile
 
-# ربط ملف السجل بمجلد السكربت/الملف التنفيذي بغض النظر عن مجلد التشغيل الحالي (CWD)
+# مسارات مرتبطة بمجلد السكربت/الملف التنفيذي بغض النظر عن مجلد التشغيل الحالي (CWD)
 if getattr(sys, "frozen", False):
     _BASE_DIR = os.path.dirname(sys.executable)  # PyInstaller onefile: مجلد الـ exe الحقيقي وليس _MEIPASS
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HISTORY_FILE = os.path.join(_BASE_DIR, "barcode_history.csv")
+HISTORY_DB = os.path.join(_BASE_DIR, "barcode_history.db")
+HISTORY_CSV = os.path.join(_BASE_DIR, "barcode_history.csv")  # السجل القديم (للترحيل مرة واحدة)
 
 class KarahocaBarcodeApp:
     def __init__(self, root):
@@ -28,7 +30,61 @@ class KarahocaBarcodeApp:
         # هيكلية التشفير حسب الرقم الأول (يسار)
         self.STRUCTURE = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"]
 
+        self._init_database()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.setup_ui()
+
+    def _init_database(self):
+        """فتح/إنشاء قاعدة SQLite المحلية وترحيل سجل CSV القديم مرة واحدة."""
+        self.conn = sqlite3.connect(HISTORY_DB)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.conn.execute("PRAGMA busy_timeout=5000;")
+        self.conn.execute(
+            """CREATE TABLE IF NOT EXISTS barcode_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                input_code TEXT NOT NULL,
+                check_digit TEXT NOT NULL,
+                full_gtin TEXT NOT NULL
+            );"""
+        )
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_barcode_input_code ON barcode_history(input_code);"
+        )
+        self.conn.commit()
+        self._migrate_csv_if_needed()
+
+    def _migrate_csv_if_needed(self):
+        """استيراد سجل barcode_history.csv القديم مرة واحدة إذا كانت القاعدة فارغة."""
+        if not os.path.exists(HISTORY_CSV):
+            return
+        try:
+            count = self.conn.execute("SELECT COUNT(*) FROM barcode_history").fetchone()[0]
+            if count > 0:
+                return
+            with open(HISTORY_CSV, "r", encoding="utf-8") as f:
+                rows = [r for r in csv.reader(f) if len(r) == 4 and r[1].isdigit()]
+            with self.conn:
+                for ts, ic, cd, fg in rows:
+                    self.conn.execute(
+                        "INSERT INTO barcode_history (created_at, input_code, check_digit, full_gtin) VALUES (?, ?, ?, ?)",
+                        (ts, ic, cd, fg),
+                    )
+        except Exception as e:
+            print(f"CSV migration failed: {e}")
+            return
+        # منع إعادة الاستيراد مستقبلاً (حتى بعد حذف الكل): احفظ نسخة محوّلة
+        try:
+            os.replace(HISTORY_CSV, HISTORY_CSV + ".imported")
+        except Exception:
+            pass
+
+    def _on_close(self):
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+        self.root.destroy()
 
     def setup_ui(self):
         # النمط العام
@@ -140,44 +196,36 @@ class KarahocaBarcodeApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
             
-        if not os.path.exists(HISTORY_FILE):
-            return
-
         recent_items = []
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-                # Filter valid rows
-                valid_rows = [r for r in rows if len(r) == 4 and r[1].isdigit()]
-                # Sort by input code (index 1) descending (Largest at top)
-                # Convert to int for proper numeric sort, though string sort works for fixed length
-                valid_rows.sort(key=lambda x: str(x[1]), reverse=True)
-
-                for row in valid_rows:
-                    self.tree.insert('', 'end', values=row)
-                    if len(recent_items) < 3:
-                        recent_items.append(row[1])
+            # الترتيب تنازلياً حسب رقم المنتج (الأصفار البادئة تجعل الترتيب النصي = الرقمي)
+            rows = self.conn.execute(
+                "SELECT id, created_at, input_code, check_digit, full_gtin "
+                "FROM barcode_history ORDER BY input_code DESC, id DESC"
+            ).fetchall()
+            for row_id, created_at, input_code, check_digit, full_gtin in rows:
+                # نستخدم id الصف كمعرّف (iid) للحذف الدقيق لاحقاً
+                self.tree.insert('', 'end', iid=str(row_id),
+                                 values=(created_at, input_code, check_digit, full_gtin))
+                if len(recent_items) < 3:
+                    recent_items.append(input_code)
         except Exception as e:
-            print(f"load_history failed to read history file: {e}")
+            print(f"load_history failed to read database: {e}")
             
         # تحديث شريط الحالة
         if recent_items:
             self.recent_label.config(text=f"آخر الأرقام: {' - '.join(recent_items)}")
 
     def get_recent_inputs(self, count=1):
-        recent_items = []
         try:
-            if os.path.exists(HISTORY_FILE):
-                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                    reader = csv.reader(f)
-                    rows = list(reader)
-                    for row in rows[-count:]:
-                        if len(row) > 1 and row[1].isdigit():
-                            recent_items.append(row[1])
+            rows = self.conn.execute(
+                "SELECT input_code FROM barcode_history ORDER BY id DESC LIMIT ?",
+                (count,)
+            ).fetchall()
+            # الأحدث في النهاية (مطابقة لسلوك CSV السابق: rows[-count:])
+            return [r[0] for r in reversed(rows)]
         except Exception:
             return []
-        return recent_items
 
     def increment_code(self):
         current_val = self.code_entry.get().strip()
@@ -248,9 +296,12 @@ class KarahocaBarcodeApp:
 
     def save_to_history(self, input_code, check_digit, full_gtin):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(HISTORY_FILE, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([timestamp, input_code, check_digit, full_gtin])
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO barcode_history (created_at, input_code, check_digit, full_gtin) "
+                "VALUES (?, ?, ?, ?)",
+                (timestamp, input_code, str(check_digit), full_gtin)
+            )
 
     def delete_selected(self):
         selected_items = self.tree.selection()
@@ -261,42 +312,18 @@ class KarahocaBarcodeApp:
         if not messagebox.askyesno("تأكيد", f"هل أنت متأكد من حذف {len(selected_items)} سجل/سجلات؟"):
             return
 
-        # Get values of selected rows to identify them
-        items_to_delete = []
-        for item in selected_items:
-            # values is a tuple of strings corresponding to columns
-            values = self.tree.item(item, 'values')
-            # (date, input, check, full)
-            if values:
-                items_to_delete.append(values)
-
-        # Read all existing rows
-        if not os.path.exists(HISTORY_FILE):
+        # المعرّفات المحددة هي id الصفوف (iid في الجدول) — حذف دقيق بالمعرّف
+        try:
+            ids = [int(iid) for iid in selected_items]
+        except ValueError:
+            messagebox.showerror("خطأ", "تعذّر تحديد السجلات المختارة.")
             return
 
-        from collections import Counter
-        # عدّ عدد النسخ المطلوب حذفها لكل صف محدد، حتى لا تُحذف كل الصفوف المتطابقة عند تحديد نسخة واحدة فقط.
-        to_delete_counts = Counter(tuple(v) for v in items_to_delete)
-
-        new_rows = []
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                # Check if this row is in our delete list
-                # row structure: [date, input, check, full]
-                # We need to match all fields to be safe
-                key = tuple(row)
-                is_deleted = to_delete_counts.get(key, 0) > 0
-                if is_deleted:
-                    to_delete_counts[key] -= 1
-                
-                if not is_deleted:
-                    new_rows.append(row)
-
-        # Write back
-        with open(HISTORY_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerows(new_rows)
+        placeholders = ",".join("?" * len(ids))
+        with self.conn:
+            self.conn.execute(
+                f"DELETE FROM barcode_history WHERE id IN ({placeholders})", ids
+            )
 
         self.load_history()
         messagebox.showinfo("تم", "تم حذف السجلات المحددة بنجاح.")
@@ -304,11 +331,11 @@ class KarahocaBarcodeApp:
     def clear_history(self):
         if not messagebox.askyesno("تأكيد", "هل أنت متأكد من حذف السجل كاملاً؟"):
             return
-            
-        if os.path.exists(HISTORY_FILE):
-            os.remove(HISTORY_FILE)
-            self.load_history()
-            messagebox.showinfo("تم", "تم حذف السجل كاملاً.")
+
+        with self.conn:
+            self.conn.execute("DELETE FROM barcode_history")
+        self.load_history()
+        messagebox.showinfo("تم", "تم حذف السجل كاملاً.")
 
     def get_ean13_svg_content(self, full_code):
         if len(full_code) != 13:
