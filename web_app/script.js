@@ -602,9 +602,12 @@ function verifyCode() {
     inputEl.value = raw;
     const box = document.getElementById('verifyResult');
     const barcodeEl = document.getElementById('verifyBarcode');
+    const dlBtn = document.getElementById('verifyDownload');
     box.innerHTML = '';
     barcodeEl.innerHTML = '';
     box.style.display = 'block';
+    dlBtn.style.display = 'none';
+    _verifiedCode = null;
 
     if (!/^\d{13}$/.test(raw)) {
         const w = document.createElement('div');
@@ -628,6 +631,12 @@ function verifyCode() {
     status.textContent = valid ? '✅ باركود صالح' : ('❌ غير صالح — رقم التحقق الصحيح: ' + computed);
     box.appendChild(status);
 
+    // زر التنزيل يظهر فقط عندما يكون الباركود صالحاً
+    if (valid) {
+        _verifiedCode = raw;
+        dlBtn.style.display = '';
+    }
+
     const mkRow = (label, value) => {
         const r = document.createElement('div');
         r.className = 'result-row';
@@ -646,6 +655,26 @@ function verifyCode() {
 
     // رسم الباركود (SVG مولّد داخلياً، أرقام فقط — آمن)
     barcodeEl.innerHTML = createSVGString(raw);
+}
+
+let _verifiedCode = null;
+
+function downloadVerifiedBarcode() {
+    if (_verifiedCode) downloadBarcodeSVG(_verifiedCode);
+}
+
+function downloadBarcodeSVG(code) {
+    const svg = createSVGString(code);
+    if (!svg) return;
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `EAN13_${code}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 // Initial Load

@@ -365,6 +365,13 @@ class KarahocaBarcodeApp:
                                        highlightbackground=BORDER, highlightthickness=1)
         self.verify_canvas.pack(fill="x", pady=6)
 
+        # زر تنزيل الباركود (يُفعَّل فقط عندما يكون الكود صالحاً)
+        self._verify_valid_code = None
+        self.verify_save_btn = ttk.Button(frame, text="💾 تنزيل الباركود (SVG)",
+                                          command=self.save_verify_svg, state="disabled",
+                                          style="Success.TButton")
+        self.verify_save_btn.pack(fill="x", pady=(6, 0))
+
     def gs1_country(self, prefix3):
         try:
             p = int(prefix3)
@@ -432,6 +439,8 @@ class KarahocaBarcodeApp:
             for _v in self._verify_val.values():
                 _v.config(text="-")
             self.verify_canvas.delete("all")
+            self._verify_valid_code = None
+            self.verify_save_btn.config(state="disabled")
             return
         first12 = raw[:12]
         entered = raw[12]
@@ -441,14 +450,33 @@ class KarahocaBarcodeApp:
         country = self.gs1_country(raw[:3]) or "غير محدّد"
         if valid:
             self.verify_status.config(text="✅ باركود صالح", fg=SUCCESS)
+            self._verify_valid_code = raw
+            self.verify_save_btn.config(state="normal")
         else:
             self.verify_status.config(text=f"❌ غير صالح — رقم التحقق الصحيح: {computed}", fg=DANGER)
+            self._verify_valid_code = None
+            self.verify_save_btn.config(state="disabled")
         self._verify_val["first"].config(text=raw[0])
         self._verify_val["gs1"].config(text=raw[:3])
         self._verify_val["country"].config(text=country)
         self._verify_val["product"].config(text=first12)
         self._verify_val["check"].config(text=f"{entered} / {computed}")
         self._draw_barcode(raw)
+
+    def save_verify_svg(self):
+        code = self._verify_valid_code
+        if not code:
+            return
+        svg_content = self.get_ean13_svg_content(code)
+        if not svg_content:
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".svg",
+                                                  filetypes=[("SVG files", "*.svg")],
+                                                  initialfile=f"EAN13_{code}.svg")
+        if file_path:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(svg_content)
+            messagebox.showinfo("تم الحفظ", f"تم حفظ الباركود بنجاح في:\n{file_path}")
 
     def load_history(self):
         # تنظيف الجدول
