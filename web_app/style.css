@@ -482,6 +482,43 @@ footer {
     flex-shrink: 0;
 }
 
+/* --- Reverse verify tab --- */
+.verify-status {
+    font-weight: 800;
+    font-size: 1.15rem;
+    text-align: center;
+    padding: 6px 0 12px;
+}
+
+.verify-status.valid {
+    color: var(--success);
+}
+
+.verify-status.invalid {
+    color: var(--danger);
+}
+
+.verify-value {
+    font-family: 'Consolas', ui-monospace, monospace;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: 0.03em;
+}
+
+#verifyBarcode {
+    text-align: center;
+    margin-top: var(--sp-4);
+}
+
+#verifyBarcode svg {
+    max-width: 100%;
+    height: auto;
+    background: #fff;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+}
+
 /* --- Scrollbar (subtle) --- */
 .tab-content {
     scrollbar-width: thin;

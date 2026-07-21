@@ -19,6 +19,7 @@
             <div class="tabs" role="tablist">
                 <button id="tab-generator" class="tab-btn active" role="tab" aria-selected="true" aria-controls="generator-tab" onclick="switchTab('generator')">📠 مولد الباركود</button>
                 <button id="tab-history" class="tab-btn" role="tab" aria-selected="false" aria-controls="history-tab" onclick="switchTab('history')">📜 سجل العمليات</button>
+                <button id="tab-verify" class="tab-btn" role="tab" aria-selected="false" aria-controls="verify-tab" onclick="switchTab('verify')">🔎 تحقق عكسي</button>
             </div>
         </header>
 
@@ -84,6 +85,17 @@
                     <!-- البيانات هنا -->
                 </tbody>
             </table>
+        </div>
+
+        <!-- تبويب التحقق العكسي -->
+        <div id="verify-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-verify">
+            <div class="input-group">
+                <label for="verifyInput">الصق باركود كامل (13 خانة):</label>
+                <input type="text" id="verifyInput" placeholder="مثال: 8699243694118" maxlength="13">
+            </div>
+            <button class="btn primary full-width" onclick="verifyCode()">تحقق وفكّ الترميز</button>
+            <div id="verifyResult" class="result-box" style="display:none;"></div>
+            <div id="verifyBarcode"></div>
         </div>
 
         <footer>

@@ -14,11 +14,21 @@ else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_DB = os.path.join(_BASE_DIR, "barcode_history.db")
 HISTORY_CSV = os.path.join(_BASE_DIR, "barcode_history.csv")  # السجل القديم (للترحيل مرة واحدة)
+# لوحة ألوان مطابقة لنسخة الويب
+BRAND = "#26364a"; BRAND2 = "#31465d"
+BG = "#eaeef2"; SURFACE = "#ffffff"; SURFACE2 = "#f4f6f9"; SURFACE3 = "#eaeff4"
+BORDER = "#dbe1e8"; BORDER2 = "#c8d1da"
+INK = "#1e2a38"; INK2 = "#51606f"; INK3 = "#5c6b7a"
+PRIMARY = "#2471a3"; PRIMARY2 = "#1d5c88"
+SUCCESS = "#178a4e"; SUCCESS2 = "#136f3f"
+WARNING = "#b26a0f"; WARNING2 = "#95580b"
+DANGER = "#cf3d3d"; DANGER2 = "#b23232"
+INFO = "#8e44ad"; INFO2 = "#783a91"
 
 class KarahocaBarcodeApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("KARAHOCABARCODES PRO")
+        self.root.title("KARAHOCA BARCODE PRO")
         self.root.geometry("700x700")
         self.root.resizable(True, True)
         
@@ -87,109 +97,294 @@ class KarahocaBarcodeApp:
         self.root.destroy()
 
     def setup_ui(self):
-        # النمط العام
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure('TButton', font=('Segoe UI', 10, 'bold'), padding=5)
-        style.configure('TLabel', font=('Segoe UI', 11))
-        style.configure('TEntry', font=('Consolas', 12))
+        self.root.configure(bg=BG)
+        self._setup_styles()
+
+        # الترويسة المشتركة (بلون الهوية الداكن) كما في نسخة الويب
+        header = tk.Frame(self.root, bg=BRAND)
+        header.pack(side="top", fill="x")
+        tk.Label(header, text="KARAHOCA BARCODE PRO", font=("Segoe UI", 16, "bold"),
+                 bg=BRAND, fg="white", pady=14).pack(fill="x")
+
+        # التذييل كما في نسخة الويب
+        tk.Label(self.root, text="Developed for KARAHOCA TEMİZLİK", bg=SURFACE, fg=INK3,
+                 font=("Segoe UI", 8), pady=6).pack(side="bottom", fill="x")
 
         # حاوية التبويبات
-        tab_control = ttk.Notebook(self.root)
-        
-        self.tab1 = ttk.Frame(tab_control)
-        self.tab2 = ttk.Frame(tab_control)
-        
-        tab_control.add(self.tab1, text='مولد الباركود')
-        tab_control.add(self.tab2, text='سجل العمليات')
-        tab_control.pack(expand=1, fill="both")
-        
+        self.tab_control = ttk.Notebook(self.root)
+        self.tab1 = ttk.Frame(self.tab_control)
+        self.tab2 = ttk.Frame(self.tab_control)
+        self.tab3 = ttk.Frame(self.tab_control)
+        self.tab_control.add(self.tab1, text="📠 مولد الباركود")
+        self.tab_control.add(self.tab2, text="📜 سجل العمليات")
+        self.tab_control.add(self.tab3, text="🔎 تحقق عكسي")
+        self.tab_control.pack(expand=1, fill="both")
+        self.tab_control.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
         self.setup_generator_ui(self.tab1)
         self.setup_history_ui(self.tab2)
-        
+        self.setup_verify_ui(self.tab3)
+
         # تحميل السجل عند الفتح
         self.load_history()
 
+    def _setup_styles(self):
+        # نظام تنسيق مطابق لألوان نسخة الويب
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TLabel", font=("Segoe UI", 11))
+        style.configure("TEntry", font=("Consolas", 12), padding=4)
+        style.configure("TSpinbox", padding=4)
+
+        def button_style(name, bg, active_bg, fg="white"):
+            style.configure(name, font=("Segoe UI", 10, "bold"), foreground=fg,
+                            background=bg, relief="flat", padding=(14, 8),
+                            bordercolor=bg, lightcolor=bg, darkcolor=bg)
+            style.map(name,
+                      background=[("pressed", active_bg), ("active", active_bg), ("disabled", "#c9d2db")],
+                      foreground=[("disabled", "#8894a1")])
+
+        button_style("Primary.TButton", PRIMARY, PRIMARY2)
+        button_style("Info.TButton", INFO, INFO2)
+        button_style("Success.TButton", SUCCESS, SUCCESS2)
+        button_style("Warning.TButton", WARNING, WARNING2)
+        button_style("Danger.TButton", DANGER, DANGER2)
+
+        # الزر الثانوي: محايد بحدود (كما في الويب)
+        style.configure("Secondary.TButton", font=("Segoe UI", 10, "bold"), foreground=INK,
+                        background=SURFACE2, relief="solid", padding=(14, 8),
+                        bordercolor=BORDER2, lightcolor=SURFACE2, darkcolor=SURFACE2)
+        style.map("Secondary.TButton",
+                  background=[("pressed", SURFACE3), ("active", SURFACE3)])
+
+        # التبويبات
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook.Tab", font=("Segoe UI", 10, "bold"), padding=(18, 8),
+                        background=BRAND2, foreground="#c9d3dd")
+        style.map("TNotebook.Tab",
+                  background=[("selected", SURFACE)], foreground=[("selected", BRAND)])
+
+        # الجدول
+        style.configure("Treeview", font=("Segoe UI", 10), rowheight=26,
+                        background=SURFACE, fieldbackground=SURFACE, foreground=INK)
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"),
+                        background=SURFACE2, foreground=INK2, relief="flat", padding=6)
+        style.map("Treeview", background=[("selected", PRIMARY)], foreground=[("selected", "white")])
+
     def setup_generator_ui(self, container):
-        frame = tk.Frame(container, bg="#f0f0f0")
-        frame.pack(expand=True, fill="both", padx=20, pady=20)
-        
-        # الشعار أو العنوان
-        tk.Label(frame, text="KARAHOCA BARCODE PRO", font=("Segoe UI", 18, "bold"), bg="#2c3e50", fg="white").pack(fill="x", pady=(0, 20))
-        
-        # مدخلات البيانات
-        input_frame = tk.Frame(frame, bg="#f0f0f0")
-        input_frame.pack(pady=10)
-        
-        tk.Label(input_frame, text="أدخل رقم المنتج (12 خانة):", bg="#f0f0f0").grid(row=0, column=0, padx=5, sticky="e")
-        
-        self.code_entry = ttk.Entry(input_frame, width=20, justify='center')
-        self.code_entry.grid(row=0, column=1, padx=5)
+        frame = tk.Frame(container, bg=BG)
+        frame.pack(expand=True, fill="both", padx=18, pady=18)
 
-        # خانة العدد (Quantity)
-        tk.Label(input_frame, text="العدد:", bg="#f0f0f0").grid(row=0, column=2, padx=5, sticky="e")
+        # مدخلات البيانات: رقم المنتج + العدد (كما في الويب)
+        input_frame = tk.Frame(frame, bg=BG)
+        input_frame.pack(fill="x", pady=(0, 10))
+        tk.Label(input_frame, text="أدخل رقم المنتج (12 خانة):", bg=BG, fg=INK2,
+                 font=("Segoe UI", 10, "bold")).grid(row=0, column=0, padx=6, sticky="w")
+        tk.Label(input_frame, text="العدد:", bg=BG, fg=INK2,
+                 font=("Segoe UI", 10, "bold")).grid(row=0, column=1, padx=6, sticky="w")
+        self.code_entry = ttk.Entry(input_frame, width=24, justify="center", font=("Consolas", 13))
+        self.code_entry.grid(row=1, column=0, padx=6, sticky="we")
         self.count_var = tk.IntVar(value=1)
-        self.count_spin = tk.Spinbox(input_frame, from_=1, to=100, width=5, textvariable=self.count_var)
-        self.count_spin.grid(row=0, column=3, padx=5)
+        self.count_spin = tk.Spinbox(input_frame, from_=1, to=100, width=6, justify="center",
+                                     textvariable=self.count_var, font=("Consolas", 13))
+        self.count_spin.grid(row=1, column=1, padx=6)
+        input_frame.columnconfigure(0, weight=1)
 
-        # الأزرار
-        btn_frame = tk.Frame(frame, bg="#f0f0f0")
-        btn_frame.pack(pady=10)
-        
-        ttk.Button(btn_frame, text="مسح الحقول", command=self.clear_fields).grid(row=0, column=0, padx=5)
-        ttk.Button(btn_frame, text="(+1)", command=self.increment_code).grid(row=0, column=1, padx=5)
-        ttk.Button(btn_frame, text="حساب وتسجيل", command=self.calculate).grid(row=0, column=2, padx=5)
-        
-        # زر التوليد الجماعي
-        ttk.Button(btn_frame, text="📦 القائمة المضغوطة (ZIP)", command=self.batch_export).grid(row=1, column=0, columnspan=3, pady=10, sticky="ew")
+        # أزرار: مسح / (+1) / حساب (بألوان الويب الدلالية)
+        btn_frame = tk.Frame(frame, bg=BG)
+        btn_frame.pack(fill="x", pady=6)
+        ttk.Button(btn_frame, text="مسح الحقول", command=self.clear_fields,
+                   style="Secondary.TButton").pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(btn_frame, text="(+1)", command=self.increment_code,
+                   style="Info.TButton").pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(btn_frame, text="حساب وتسجيل", command=self.calculate,
+                   style="Primary.TButton").pack(side="left", expand=True, fill="x", padx=3)
 
-        # عرض النتائج
-        result_frame = tk.LabelFrame(frame, text="النتيجة", bg="white", font=("Segoe UI", 10, "bold"))
-        result_frame.pack(fill="x", pady=10, padx=20)
-        
-        tk.Label(result_frame, text="رقم التحقق (Check Digit):", bg="white").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-        self.check_digit_label = tk.Label(result_frame, text="-", font=("Consolas", 14, "bold"), fg="#e74c3c", bg="white")
-        self.check_digit_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
-        
-        tk.Label(result_frame, text="الباركود الكامل (GTIN-13):", bg="white").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-        self.full_code_entry = ttk.Entry(result_frame, width=20, justify='center', font=("Consolas", 12))
-        self.full_code_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-        
-        # زر الحفظ
-        self.save_btn = ttk.Button(frame, text="💾 حفظ صورة الباركود (SVG)", command=self.save_svg, state="disabled")
-        self.save_btn.pack(pady=10)
-        
-        # عرض آخر الأرقام
-        self.recent_label = tk.Label(frame, text="آخر الأرقام المستخدمة: ...", bg="#e0e0e0", fg="#555")
-        self.recent_label.pack(side="bottom", fill="x", pady=10)
+        # صندوق النتيجة
+        result_frame = tk.Frame(frame, bg=SURFACE2, highlightbackground=BORDER, highlightthickness=1)
+        result_frame.pack(fill="x", pady=12)
+        tk.Label(result_frame, text="رقم التحقق:", bg=SURFACE2, fg=INK2,
+                 font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+        self.check_digit_label = tk.Label(result_frame, text="-", font=("Consolas", 18, "bold"),
+                                          fg=PRIMARY, bg=SURFACE2)
+        self.check_digit_label.grid(row=0, column=1, sticky="e", padx=12, pady=(10, 4))
+        tk.Label(result_frame, text="الباركود الكامل:", bg=SURFACE2, fg=INK2,
+                 font=("Segoe UI", 10, "bold")).grid(row=1, column=0, sticky="w", padx=12, pady=(4, 10))
+        self.full_code_entry = ttk.Entry(result_frame, width=20, justify="center", font=("Consolas", 13))
+        self.full_code_entry.grid(row=1, column=1, sticky="e", padx=12, pady=(4, 10))
+        result_frame.columnconfigure(0, weight=1)
+
+        # أزرار التصدير والدفعة (بعرض كامل)
+        self.save_btn = ttk.Button(frame, text="💾 حفظ صورة الباركود (SVG)", command=self.save_svg,
+                                   state="disabled", style="Success.TButton")
+        self.save_btn.pack(fill="x", pady=(6, 3))
+        ttk.Button(frame, text="📦 توليد وتنزيل المجموعة (ZIP)", command=self.batch_export,
+                   style="Warning.TButton").pack(fill="x", pady=3)
+
+        # شريط آخر الأرقام المستخدمة
+        self.recent_label = tk.Label(frame, text="آخر الأرقام المستخدمة: ...", bg=SURFACE2, fg=INK2,
+                                     font=("Segoe UI", 9), pady=8, relief="solid", bd=1)
+        self.recent_label.pack(side="bottom", fill="x", pady=(12, 0))
 
     def setup_history_ui(self, container):
-        # Using a Treeview for history
-        columns = ('date', 'input', 'check', 'full')
-        self.tree = ttk.Treeview(container, columns=columns, show='headings')
-        
-        self.tree.heading('date', text='التاريخ')
-        self.tree.heading('input', text='المدخل')
-        self.tree.heading('check', text='التحقق')
-        self.tree.heading('full', text='الكامل')
-        
-        self.tree.column('date', width=150, anchor='center')
-        self.tree.column('input', width=100, anchor='center')
-        self.tree.column('check', width=50, anchor='center')
-        self.tree.column('full', width=150, anchor='center')
-        
-        slider = ttk.Scrollbar(container, orient="vertical", command=self.tree.yview)
+        wrapper = tk.Frame(container, bg=BG)
+        wrapper.pack(expand=True, fill="both", padx=12, pady=12)
+
+        # شريط الأدوات: تحديث / تحديد الكل / حذف المحدد / حذف الكل (كما في الويب)
+        toolbar = tk.Frame(wrapper, bg=BG)
+        toolbar.pack(fill="x", pady=(0, 10))
+        ttk.Button(toolbar, text="🔄 تحديث السجل", command=self.load_history,
+                   style="Secondary.TButton").pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(toolbar, text="✔️ تحديد الكل", command=self.select_all_history,
+                   style="Secondary.TButton").pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(toolbar, text="🗑️ حذف المحدد", command=self.delete_selected,
+                   style="Warning.TButton").pack(side="left", expand=True, fill="x", padx=3)
+        ttk.Button(toolbar, text="❌ حذف الكل", command=self.clear_history,
+                   style="Danger.TButton").pack(side="left", expand=True, fill="x", padx=3)
+
+        # الجدول
+        table_frame = tk.Frame(wrapper, bg=BG)
+        table_frame.pack(expand=True, fill="both")
+        columns = ("date", "input", "check", "full")
+        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="extended")
+        self.tree.heading("date", text="التوقيت")
+        self.tree.heading("input", text="المدخل")
+        self.tree.heading("check", text="التحقق")
+        self.tree.heading("full", text="الكامل")
+        self.tree.column("date", width=160, anchor="center")
+        self.tree.column("input", width=110, anchor="center")
+        self.tree.column("check", width=60, anchor="center")
+        self.tree.column("full", width=150, anchor="center")
+        slider = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=slider.set)
-        
         slider.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
 
-        # زر حذف المحدد
-        btn_frame = tk.Frame(container)
-        btn_frame.pack(fill="x", pady=5)
-        
-        ttk.Button(btn_frame, text="حذف المحدد (Delete Selected)", command=self.delete_selected).pack(side="right", padx=5)
-        ttk.Button(btn_frame, text="حذف الكل (Delete All)", command=self.clear_history).pack(side="left", padx=5)
+    def select_all_history(self):
+        # تحديد كل الصفوف (يعادل مربع "تحديد الكل" في الويب)
+        children = self.tree.get_children()
+        if children:
+            self.tree.selection_set(children)
+
+    def on_tab_changed(self, event):
+        # تحديث السجل تلقائياً عند الانتقال إلى تبويب السجل (كما في الويب)
+        try:
+            if self.tab_control.index(self.tab_control.select()) == 1:
+                self.load_history()
+        except Exception:
+            pass
+
+    def setup_verify_ui(self, container):
+        frame = tk.Frame(container, bg=BG)
+        frame.pack(expand=True, fill="both", padx=18, pady=18)
+
+        tk.Label(frame, text="الصق باركود كامل (13 خانة):", bg=BG, fg=INK2,
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 4))
+        self.verify_entry = ttk.Entry(frame, justify="center", font=("Consolas", 14))
+        self.verify_entry.pack(fill="x")
+
+        ttk.Button(frame, text="تحقق وفكّ الترميز", command=self.verify_code,
+                   style="Primary.TButton").pack(fill="x", pady=12)
+
+        # حالة النتيجة (صالح / غير صالح)
+        self.verify_status = tk.Label(frame, text="", bg=BG, font=("Segoe UI", 13, "bold"))
+        self.verify_status.pack(fill="x")
+
+        # تفاصيل التفكيك
+        self.verify_details = tk.Label(frame, text="", bg=SURFACE2, fg=INK, justify="right",
+                                       anchor="e", font=("Consolas", 11), padx=12, pady=10,
+                                       relief="solid", bd=1)
+        self.verify_details.pack(fill="x", pady=10)
+
+        # لوحة رسم الباركود
+        self.verify_canvas = tk.Canvas(frame, bg="white", height=150,
+                                       highlightbackground=BORDER, highlightthickness=1)
+        self.verify_canvas.pack(fill="x", pady=6)
+
+    def gs1_country(self, prefix3):
+        try:
+            p = int(prefix3)
+        except (TypeError, ValueError):
+            return None
+        ranges = [
+            (0, 19, "الولايات المتحدة/كندا"), (30, 39, "الولايات المتحدة"), (300, 379, "فرنسا"),
+            (400, 440, "ألمانيا"), (450, 459, "اليابان"), (460, 469, "روسيا"), (500, 509, "المملكة المتحدة"),
+            (619, 620, "تونس"), (621, 621, "سوريا"), (622, 622, "مصر"), (625, 625, "الأردن"),
+            (626, 626, "إيران"), (627, 627, "الكويت"), (628, 628, "السعودية"), (629, 629, "الإمارات"),
+            (690, 699, "الصين"), (729, 729, "إسرائيل"), (868, 869, "تركيا"), (870, 879, "هولندا"), (890, 890, "الهند"),
+        ]
+        for lo, hi, name in ranges:
+            if lo <= p <= hi:
+                return name
+        return None
+
+    def get_ean13_binary(self, full_code):
+        # يبني السلسلة الثنائية (95 وحدة) من نفس جداول التشفير
+        if len(full_code) != 13:
+            return None
+        first_digit = int(full_code[0])
+        left_digits = full_code[1:7]
+        right_digits = full_code[7:]
+        structure = self.STRUCTURE[first_digit]
+        binary = "101"
+        for i in range(6):
+            d = int(left_digits[i])
+            binary += self.L_CODES[d] if structure[i] == 'L' else self.G_CODES[d]
+        binary += "01010"
+        for i in range(6):
+            binary += self.R_CODES[int(right_digits[i])]
+        binary += "101"
+        return binary
+
+    def _draw_barcode(self, full_code):
+        c = self.verify_canvas
+        c.delete("all")
+        binary = self.get_ean13_binary(full_code)
+        if not binary:
+            return
+        module_w = 2
+        bar_h = 95
+        guard_h = 108
+        c.update_idletasks()
+        cw = c.winfo_width() or 600
+        total = len(binary) * module_w
+        x0 = max(20, (cw - total) // 2)
+        y0 = 8
+        for i, bit in enumerate(binary):
+            if bit == '1':
+                is_guard = (i < 3) or (45 <= i < 50) or (i >= 92)
+                h = guard_h if is_guard else bar_h
+                x = x0 + i * module_w
+                c.create_rectangle(x, y0, x + module_w, y0 + h, fill="black", outline="")
+        c.create_text(x0 + total // 2, y0 + guard_h + 16, text=full_code,
+                      font=("Consolas", 12), fill="black")
+
+    def verify_code(self):
+        raw = self.verify_entry.get().strip().replace('-', '').replace(' ', '')
+        self.verify_entry.delete(0, tk.END)
+        self.verify_entry.insert(0, raw)
+        if not raw.isdigit() or len(raw) != 13:
+            self.verify_status.config(text="⚠ يجب إدخال 13 رقماً بالضبط.", fg=DANGER)
+            self.verify_details.config(text="")
+            self.verify_canvas.delete("all")
+            return
+        first12 = raw[:12]
+        entered = raw[12]
+        total = sum(int(ch) * (3 if i % 2 == 0 else 1) for i, ch in enumerate(first12[::-1]))
+        computed = str((10 - (total % 10)) % 10)
+        valid = (computed == entered)
+        country = self.gs1_country(raw[:3]) or "غير محدّد"
+        if valid:
+            self.verify_status.config(text="✅ باركود صالح", fg=SUCCESS)
+        else:
+            self.verify_status.config(text=f"❌ غير صالح — رقم التحقق الصحيح: {computed}", fg=DANGER)
+        self.verify_details.config(text=(
+            f"نظام الترقيم (أول رقم): {raw[0]}\n"
+            f"بادئة GS1: {raw[:3]}  ({country})\n"
+            f"رمز المنتج (12 خانة): {first12}\n"
+            f"رقم التحقق (مُدخل / محسوب): {entered} / {computed}"
+        ))
+        self._draw_barcode(raw)
 
     def load_history(self):
         # تنظيف الجدول

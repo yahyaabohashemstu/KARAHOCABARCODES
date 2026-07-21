@@ -44,15 +44,18 @@ const STRUCTURE = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "
 
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('active');
+        el.setAttribute('aria-selected', 'false');
+    });
 
     document.getElementById(tabId + '-tab').classList.add('active');
-    // البحث عن الزر النشط وتفعيله
-    const btns = document.querySelectorAll('.tab-btn');
-    btns.forEach(b => b.setAttribute('aria-selected', 'false'));
-    const activeBtn = (tabId === 'generator') ? btns[0] : btns[1];
-    activeBtn.classList.add('active');
-    activeBtn.setAttribute('aria-selected', 'true');
+    // تفعيل زر التبويب المطابق (يدعم أي عدد من التبويبات)
+    const activeBtn = document.getElementById('tab-' + tabId);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+        activeBtn.setAttribute('aria-selected', 'true');
+    }
 
     if (tabId === 'history') loadHistory();
 }
@@ -574,6 +577,75 @@ function createSVGString(code) {
     svg += `</svg>`;
 
     return svg;
+}
+
+// ==========================================
+// التحقق العكسي (فكّ وتحقّق من باركود كامل)
+// ==========================================
+function gs1Country(prefix3) {
+    const p = parseInt(prefix3, 10);
+    if (isNaN(p)) return null;
+    const ranges = [
+        [0, 19, 'الولايات المتحدة/كندا'], [30, 39, 'الولايات المتحدة'], [300, 379, 'فرنسا'],
+        [400, 440, 'ألمانيا'], [450, 459, 'اليابان'], [460, 469, 'روسيا'], [500, 509, 'المملكة المتحدة'],
+        [619, 620, 'تونس'], [621, 621, 'سوريا'], [622, 622, 'مصر'], [625, 625, 'الأردن'],
+        [626, 626, 'إيران'], [627, 627, 'الكويت'], [628, 628, 'السعودية'], [629, 629, 'الإمارات'],
+        [690, 699, 'الصين'], [729, 729, 'إسرائيل'], [868, 869, 'تركيا'], [870, 879, 'هولندا'], [890, 890, 'الهند']
+    ];
+    for (const [lo, hi, name] of ranges) if (p >= lo && p <= hi) return name;
+    return null;
+}
+
+function verifyCode() {
+    const inputEl = document.getElementById('verifyInput');
+    const raw = inputEl.value.trim().replace(/[\s-]/g, '');
+    inputEl.value = raw;
+    const box = document.getElementById('verifyResult');
+    const barcodeEl = document.getElementById('verifyBarcode');
+    box.innerHTML = '';
+    barcodeEl.innerHTML = '';
+    box.style.display = 'block';
+
+    if (!/^\d{13}$/.test(raw)) {
+        const w = document.createElement('div');
+        w.className = 'verify-status invalid';
+        w.textContent = '⚠ يجب إدخال 13 رقماً بالضبط.';
+        box.appendChild(w);
+        return;
+    }
+
+    const first12 = raw.slice(0, 12);
+    const entered = raw[12];
+    const digits = first12.split('').reverse().map(Number);
+    let total = 0;
+    digits.forEach((d, i) => { total += d * ((i % 2 === 0) ? 3 : 1); });
+    const computed = String((10 - (total % 10)) % 10);
+    const valid = (computed === entered);
+    const country = gs1Country(raw.slice(0, 3)) || 'غير محدّد';
+
+    const status = document.createElement('div');
+    status.className = 'verify-status ' + (valid ? 'valid' : 'invalid');
+    status.textContent = valid ? '✅ باركود صالح' : ('❌ غير صالح — رقم التحقق الصحيح: ' + computed);
+    box.appendChild(status);
+
+    const mkRow = (label, value) => {
+        const r = document.createElement('div');
+        r.className = 'result-row';
+        const l = document.createElement('span');
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'verify-value';
+        v.textContent = value;
+        r.append(l, v);
+        return r;
+    };
+    box.appendChild(mkRow('نظام الترقيم (أول رقم):', raw[0]));
+    box.appendChild(mkRow('بادئة GS1:', raw.slice(0, 3) + '  (' + country + ')'));
+    box.appendChild(mkRow('رمز المنتج (12 خانة):', first12));
+    box.appendChild(mkRow('رقم التحقق (مُدخل / محسوب):', entered + ' / ' + computed));
+
+    // رسم الباركود (SVG مولّد داخلياً، أرقام فقط — آمن)
+    barcodeEl.innerHTML = createSVGString(raw);
 }
 
 // Initial Load
